@@ -7,9 +7,8 @@ from pydantic import BaseModel
 import psycopg
 from collectors.runner import run_collectors
 
-app = FastAPI(title="Open Close Map API", version="0.2.0")
+app = FastAPI(title="Open Close Map API", version="0.2.0", description="Backend API for 開店閉店マップ")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False, allow_methods=["*"], allow_headers=["*"])
-
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 def db_conn():
@@ -96,6 +95,56 @@ def root():
 def health():
     return {"ok":True,"database_configured":bool(DATABASE_URL),"time":datetime.now(timezone.utc).isoformat()}
 
+@app.get("/api/stores")
+def list_stores(status: Optional[str]=None, prefecture: Optional[str]=None, city: Optional[str]=None, limit: int=Query(default=50, ge=1, le=200)):
+    conn = db_conn()
+    if conn is None:
+        return {"items":[],"count":0,"mode":"no-database"}
+    clauses, params = [], []
+    if status:
+        clauses.append("status = %s"); params.append(status)
+    if prefecture:
+        clauses.append("prefecture = %s"); params.append(prefecture)
+    if city:
+        clauses.append("city = %s"); params.append(city)
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    params.append(limit)
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT id,name,status,category,prefecture,city,address,
+                       open_date,close_date,source_url,source_name,confidence,last_verified_at
+                FROM stores {where}
+                ORDER BY COALESCE(open_date, close_date) DESC NULLS LAST, id DESC
+                LIMIT %s
+            """, params)
+            rows = cur.fetchall()
+    items = [{
+        "id":r[0],"name":r[1],"status":r[2],"category":r[3],"prefecture":r[4],"city":r[5],"address":r[6],
+        "open_date":r[7].isoformat() if r[7] else None,"close_date":r[8].isoformat() if r[8] else None,
+        "source_url":r[9],"source_name":r[10],"confidence":r[11],"last_verified_at":r[12].isoformat() if r[12] else None
+    } for r in rows]
+    return {"items":items,"count":len(items),"mode":"database"}
+
+@app.post("/api/stores")
+def create_store(store: StoreCreate):
+    conn = db_conn()
+    if conn is None:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO stores (
+                    name,status,category,prefecture,city,address,
+                    open_date,close_date,source_url,source_name,confidence,last_verified_at
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW()) RETURNING id
+            """, (
+                store.name,store.status,store.category,store.prefecture,store.city,store.address,
+                store.open_date,store.close_date,store.source_url,store.source_name,store.confidence
+            ))
+            store_id = cur.fetchone()[0]
+    return {"ok":True,"id":store_id}
+
 @app.get("/api/discovery")
 def discovery(status: Optional[str]=None, processed: Optional[bool]=None, limit: int=Query(default=50, ge=1, le=200)):
     conn = db_conn()
@@ -113,8 +162,7 @@ def discovery(status: Optional[str]=None, processed: Optional[bool]=None, limit:
             cur.execute(f"""
                 SELECT id,title,source_name,source_url,published_at,detected_status,
                        prefecture,city,confidence,processed,created_at
-                FROM discovery_items
-                {where}
+                FROM discovery_items {where}
                 ORDER BY COALESCE(published_at,created_at) DESC
                 LIMIT %s
             """, params)
@@ -126,6 +174,27 @@ def discovery(status: Optional[str]=None, processed: Optional[bool]=None, limit:
         "created_at":r[10].isoformat() if r[10] else None
     } for r in rows]
     return {"items":items,"count":len(items),"mode":"database"}
+
+@app.get("/api/stats")
+def stats():
+    conn = db_conn()
+    if conn is None:
+        return {"today_open":0,"week_open":0,"week_close":0,"tenant_detected":0,"discovery_unprocessed":0,"mode":"no-database"}
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COUNT(*) FILTER (WHERE status='open' AND open_date=CURRENT_DATE),
+                    COUNT(*) FILTER (WHERE status IN ('open','opening') AND open_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'),
+                    COUNT(*) FILTER (WHERE status IN ('closed','closing') AND close_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days')
+                FROM stores
+            """)
+            row = cur.fetchone()
+            cur.execute("SELECT COUNT(*) FROM tenant_listings WHERE status IN ('detected','active')")
+            tenant_count = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM discovery_items WHERE processed=FALSE")
+            discovery_count = cur.fetchone()[0]
+    return {"today_open":row[0],"week_open":row[1],"week_close":row[2],"tenant_detected":tenant_count,"discovery_unprocessed":discovery_count,"mode":"database"}
 
 @app.post("/api/collect")
 def collect():
