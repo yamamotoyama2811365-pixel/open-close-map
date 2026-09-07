@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>開店閉店マップ｜全国の開店・閉店・テナント情報</title>
+  <meta name="description" content="全国の開店・閉店・テナント募集情報を、地図とデータで探せる店舗情報データベース。" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="#" class="brand" aria-label="開店閉店マップ ホーム">
+        <span class="brand-icon">⌖</span>
+        <span><strong>開店閉店マップ</strong><small>全国の開店・閉店・テナント情報データベース</small></span>
+      </a>
+      <nav class="nav">
+        <a href="#areas">エリアから探す</a>
+        <a href="#open">開店情報を探す</a>
+        <a href="#close">閉店情報を探す</a>
+        <a href="#map">地図で見る</a>
+      </nav>
+      <form class="header-search" onsubmit="return false;">
+        <input id="headerSearch" placeholder="店舗名・エリア・キーワードで検索" />
+        <button type="button" onclick="runSearch('headerSearch')">検索</button>
+      </form>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-overlay"></div>
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow">全国の店舗情報を毎日更新</span>
+          <h1>あたらしいお店の開店も、<br>惜しまれるお店の閉店も、いち早く。</h1>
+          <p>全国の開店・閉店・テナント情報を地図とデータでお届けします。</p>
+          <div class="hero-search">
+            <input id="heroSearch" placeholder="店舗名・住所・エリア・駅名などで検索" />
+            <button type="button" onclick="runSearch('heroSearch')">検索</button>
+          </div>
+          <div class="chips">
+            <button>札幌市</button><button>東京23区</button><button>大阪市</button><button>名古屋市</button><button>福岡市</button><button>横浜市</button>
+          </div>
+        </div>
+        <div class="map-card" id="map">
+          <div>
+            <h3>地図で探す</h3>
+            <p>エリアごとの開店・閉店情報を地図上でチェック</p>
+            <button class="primary">地図を開く →</button>
+          </div>
+          <div class="fake-map" aria-label="デモ地図">
+            <span class="pin green p1">●</span><span class="pin red p2">●</span><span class="pin orange p3">●</span><span class="pin blue p4">●</span><span class="pin red p5">●</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="container stats">
+      <div><span class="stat-icon green-bg">⌂</span><p>本日の開店・閉店情報<strong>128<small>件</small></strong></p></div>
+      <div><span class="stat-icon orange-bg">OPEN</span><p>今週の開店予定<strong class="orange-text">342<small>件</small></strong></p></div>
+      <div><span class="stat-icon red-bg">CLOSE</span><p>今週の閉店予定<strong class="red-text">186<small>件</small></strong></p></div>
+      <div><span class="stat-icon blue-bg">▦</span><p>テナント募集情報<strong>271<small>件</small></strong></p></div>
+      <div class="updated">最終更新：2026年9月7日 11:30</div>
+    </section>
+
+    <section class="container content-grid">
+      <div>
+        <div class="section-head"><h2>最新の開店・閉店情報</h2><a href="#">もっと見る →</a></div>
+        <div class="cards" id="storeCards"></div>
+
+        <div class="feature" id="open">
+          <div class="feature-image restaurant"></div>
+          <div class="feature-body">
+            <span class="badge orange">開店予定</span>
+            <h2>ラーメン山岡家 札幌清田店</h2>
+            <strong class="red-text">2026年10月下旬 オープン予定</strong>
+            <p>北海道札幌市清田区美しが丘。工事・求人・公式情報をもとに自動判定。</p>
+            <button class="primary">詳細を見る →</button>
+          </div>
+        </div>
+
+        <div class="bottom-grid">
+          <div class="panel">
+            <h3>周辺の開店・閉店動向（簡易分析）</h3>
+            <div class="metrics"><b>周辺活力度 <span>78</span>/100</b><b>最寄駅 約350m</b><b>昼間人口 多い</b><b>周辺飲食店 多い</b><b>休日人流 高い</b><b>新規出店傾向 増加傾向</b></div>
+            <small>※公開統計・周辺施設・出店閉店データ等から算出する独自指標です。</small>
+          </div>
+          <div class="panel">
+            <h3>テナント募集情報</h3>
+            <span class="badge blue">募集中</span>
+            <p>この物件でテナント募集情報を確認しました。</p>
+            <p>最終確認：2026年9月7日</p>
+            <button class="primary">物件情報を見る →</button>
+          </div>
+        </div>
+      </div>
+
+      <aside>
+        <div class="panel" id="areas">
+          <h3>エリアで探す</h3>
+          <div class="region-grid"><button>北海道</button><button>東北</button><button>関東</button><button>中部</button><button>関西</button><button>中国</button><button>四国</button><button>九州</button><button>沖縄</button></div>
+          <h4>人気のエリア</h4>
+          <ul class="ranking"><li><span>札幌市</span><b>1,284件</b></li><li><span>仙台市</span><b>842件</b></li><li><span>東京23区</span><b>3,721件</b></li><li><span>大阪市</span><b>2,411件</b></li><li><span>福岡市</span><b>973件</b></li></ul>
+        </div>
+        <div class="promo"><strong>次にオープンするお店は？<br>あの店はもう閉店した？</strong><span>街の変化を、もっと早く。</span><button>最新情報を探す →</button></div>
+        <div class="panel" id="close">
+          <h3>人気の業種</h3>
+          <ul class="ranking"><li><span>飲食店</span><b>3,842件</b></li><li><span>カフェ</span><b>1,203件</b></li><li><span>コンビニ</span><b>842件</b></li><li><span>美容・サロン</span><b>621件</b></li><li><span>スーパー・食品</span><b>598件</b></li></ul>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <footer><div class="container">© 2026 開店閉店マップ</div></footer>
+  <script src="app.js"></script>
+</body>
+</html>
