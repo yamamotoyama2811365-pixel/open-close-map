@@ -46,7 +46,6 @@ def detect_prefecture(text: str):
     return None
 
 def detect_city(text: str):
-    # 市・区・町・村をざっくり抽出。誤検出を減らすため最大12文字。
     m = re.search(r'([一-龥ぁ-んァ-ヶー]{1,12}(?:市|区|町|村))', text)
     return m.group(1) if m else None
 
@@ -57,14 +56,12 @@ def detect_category(text: str):
     return None
 
 def extract_date(text: str):
-    # 2026年9月30日 / 2026/9/30 / 9月30日
-    m = re.search(r'(20\d{2})[年/.-]\s*(\d{1,2})[月/.-]\s*(\d{1,2})日?', text)
+    m = re.search(r'(20\d{2})[年/.\-]\s*(\d{1,2})[月/.\-]\s*(\d{1,2})日?', text)
     if m:
         try:
             return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
         except ValueError:
             return None
-
     m = re.search(r'(\d{1,2})月\s*(\d{1,2})日', text)
     if m:
         try:
@@ -74,7 +71,6 @@ def extract_date(text: str):
     return None
 
 def clean_store_name(title: str):
-    # ニュース見出しの前半を店舗名候補として使う簡易ルール
     t = re.sub(r'\s*[-｜|]\s*[^-｜|]+$', '', title).strip()
     t = re.sub(r'【[^】]+】', '', t)
     t = re.sub(r'^\[[^\]]+\]\s*', '', t)

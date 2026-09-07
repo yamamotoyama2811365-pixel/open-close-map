@@ -10,19 +10,8 @@ import psycopg
 from collectors.runner import run_collectors
 from collectors.processor import promote_candidates
 
-app = FastAPI(
-    title="Open Close Map API",
-    version="0.3.0",
-    description="Backend API for 開店閉店マップ"
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="Open Close Map API", version="0.4.0", description="Backend API for 開店閉店マップ")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False, allow_methods=["*"], allow_headers=["*"])
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
@@ -33,7 +22,6 @@ def init_db():
     conn = db_conn()
     if conn is None:
         return
-
     with conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -55,9 +43,7 @@ def init_db():
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
-
             cur.execute("ALTER TABLE stores ADD COLUMN IF NOT EXISTS source_name TEXT")
-
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS tenant_listings (
                     id BIGSERIAL PRIMARY KEY,
@@ -70,7 +56,6 @@ def init_db():
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
-
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS discovery_items (
                     id BIGSERIAL PRIMARY KEY,
@@ -91,7 +76,6 @@ def init_db():
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
-
             cur.execute("ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS store_name_candidate TEXT")
             cur.execute("ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS event_date_candidate DATE")
             cur.execute("ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS category_candidate TEXT")
@@ -115,19 +99,66 @@ class StoreCreate(BaseModel):
 
 @app.get("/")
 def root():
-    return {
-        "service": "open-close-map-api",
-        "status": "ok",
-        "version": "0.3.0",
-        "time": datetime.now(timezone.utc).isoformat()
-    }
+    return {"service":"open-close-map-api","status":"ok","version":"0.4.0","time":datetime.now(timezone.utc).isoformat()}
 
 @app.get("/health")
 def health():
+    return {"ok":True,"database_configured":bool(DATABASE_URL),"time":datetime.now(timezone.utc).isoformat()}
+
+@app.get("/api/stats")
+def stats():
+    conn = db_conn()
+    if conn is None:
+        return {
+            "today_open":0,"week_open":0,"week_close":0,"tenant_detected":0,
+            "discovery_unprocessed":0,"stores_total":0,"mode":"no-database"
+        }
+
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE status IN ('open','opening')
+                          AND open_date = CURRENT_DATE
+                    ),
+                    COUNT(*) FILTER (
+                        WHERE status IN ('open','opening')
+                          AND open_date BETWEEN CURRENT_DATE
+                          AND CURRENT_DATE + INTERVAL '7 days'
+                    ),
+                    COUNT(*) FILTER (
+                        WHERE status IN ('closed','closing')
+                          AND close_date BETWEEN CURRENT_DATE
+                          AND CURRENT_DATE + INTERVAL '7 days'
+                    ),
+                    COUNT(*)
+                FROM stores
+            """)
+            today_open, week_open, week_close, stores_total = cur.fetchone()
+
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM tenant_listings
+                WHERE status IN ('detected','active')
+            """)
+            tenant_detected = cur.fetchone()[0]
+
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM discovery_items
+                WHERE processed = FALSE
+            """)
+            discovery_unprocessed = cur.fetchone()[0]
+
     return {
-        "ok": True,
-        "database_configured": bool(DATABASE_URL),
-        "time": datetime.now(timezone.utc).isoformat()
+        "today_open": today_open,
+        "week_open": week_open,
+        "week_close": week_close,
+        "tenant_detected": tenant_detected,
+        "discovery_unprocessed": discovery_unprocessed,
+        "stores_total": stores_total,
+        "mode": "database"
     }
 
 @app.get("/api/stores")
@@ -139,7 +170,7 @@ def list_stores(
 ):
     conn = db_conn()
     if conn is None:
-        return {"items": [], "count": 0, "mode": "no-database"}
+        return {"items":[],"count":0,"mode":"no-database"}
 
     clauses, params = [], []
     if status:
@@ -160,7 +191,7 @@ def list_stores(
                        confidence,last_verified_at
                 FROM stores
                 {where}
-                ORDER BY COALESCE(open_date,close_date) DESC NULLS LAST,id DESC
+                ORDER BY COALESCE(open_date,close_date,created_at::date) DESC NULLS LAST,id DESC
                 LIMIT %s
             """, params)
             rows = cur.fetchall()
@@ -173,14 +204,13 @@ def list_stores(
         "source_url":r[9],"source_name":r[10],"confidence":r[11],
         "last_verified_at":r[12].isoformat() if r[12] else None
     } for r in rows]
-
     return {"items":items,"count":len(items),"mode":"database"}
 
 @app.post("/api/stores")
 def create_store(store: StoreCreate):
     conn = db_conn()
     if conn is None:
-        return {"ok": False, "error": "DATABASE_URL is not configured"}
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
 
     with conn:
         with conn.cursor() as cur:
@@ -198,8 +228,7 @@ def create_store(store: StoreCreate):
                 store.source_url,store.source_name,store.confidence
             ))
             store_id = cur.fetchone()[0]
-
-    return {"ok": True, "id": store_id}
+    return {"ok":True,"id":store_id}
 
 @app.get("/api/discovery")
 def discovery(
@@ -243,27 +272,7 @@ def discovery(
         "category_candidate":r[12],
         "created_at":r[13].isoformat() if r[13] else None
     } for r in rows]
-
     return {"items":items,"count":len(items),"mode":"database"}
-
-@app.get("/api/stats")
-def stats():
-    conn = db_conn()
-    if conn is None:
-        return {"mode":"no-database"}
-
-    with conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM discovery_items WHERE processed = FALSE")
-            discovery_unprocessed = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM stores")
-            stores_total = cur.fetchone()[0]
-
-    return {
-        "discovery_unprocessed": discovery_unprocessed,
-        "stores_total": stores_total,
-        "mode": "database"
-    }
 
 @app.post("/api/collect")
 def collect():

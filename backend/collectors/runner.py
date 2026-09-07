@@ -4,13 +4,8 @@ import feedparser
 
 from .sources import RSS_SOURCES
 from .text_rules import (
-    classify_title,
-    detect_prefecture,
-    detect_city,
-    detect_category,
-    extract_date,
-    clean_store_name,
-    calculate_confidence,
+    classify_title, detect_prefecture, detect_city, detect_category,
+    extract_date, clean_store_name, calculate_confidence
 )
 
 def fingerprint(title: str, url: str) -> str:
@@ -18,20 +13,17 @@ def fingerprint(title: str, url: str) -> str:
 
 def run_collectors(database_url: str):
     import psycopg
-
     fetched = inserted = duplicates = 0
 
     with psycopg.connect(database_url) as conn:
         with conn.cursor() as cur:
             for source in RSS_SOURCES:
                 feed = feedparser.parse(source["url"])
-
                 for entry in feed.entries[:source.get("limit", 50)]:
                     fetched += 1
                     title = (entry.get("title") or "").strip()
                     url = (entry.get("link") or "").strip()
                     summary = (entry.get("summary") or "").strip()
-
                     if not title or not url:
                         continue
 
@@ -82,15 +74,9 @@ def run_collectors(database_url: str):
                         event_date, category
                     ))
 
-                    was_inserted = cur.fetchone()[0]
-                    if was_inserted:
+                    if cur.fetchone()[0]:
                         inserted += 1
                     else:
                         duplicates += 1
 
-    return {
-        "fetched": fetched,
-        "inserted": inserted,
-        "duplicates": duplicates,
-        "sources": len(RSS_SOURCES),
-    }
+    return {"fetched": fetched, "inserted": inserted, "duplicates": duplicates, "sources": len(RSS_SOURCES)}

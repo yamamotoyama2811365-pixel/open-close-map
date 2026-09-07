@@ -1,8 +1,6 @@
 def promote_candidates(database_url: str, min_confidence: int = 80):
     import psycopg
-
-    promoted = 0
-    skipped = 0
+    promoted = skipped = 0
 
     with psycopg.connect(database_url) as conn:
         with conn.cursor() as cur:
@@ -17,24 +15,16 @@ def promote_candidates(database_url: str, min_confidence: int = 80):
                   AND detected_status IN ('opening','closing')
                   AND store_name_candidate IS NOT NULL
             """, (min_confidence,))
-
             rows = cur.fetchall()
 
             for row in rows:
-                (
-                    discovery_id, name, detected_status, category,
-                    prefecture, city, event_date, source_url, source_name,
-                    confidence
-                ) = row
-
+                discovery_id, name, detected_status, category, prefecture, city, event_date, source_url, source_name, confidence = row
                 status = "opening" if detected_status == "opening" else "closing"
                 open_date = event_date if status == "opening" else None
                 close_date = event_date if status == "closing" else None
 
-                # 同じ店名＋地域＋日付の重複をざっくり防止
                 cur.execute("""
-                    SELECT id
-                    FROM stores
+                    SELECT id FROM stores
                     WHERE name = %s
                       AND COALESCE(prefecture,'') = COALESCE(%s,'')
                       AND COALESCE(city,'') = COALESCE(%s,'')
@@ -50,20 +40,16 @@ def promote_candidates(database_url: str, min_confidence: int = 80):
 
                 cur.execute("""
                     INSERT INTO stores (
-                        name, status, category, prefecture, city,
-                        open_date, close_date, source_url, source_name,
-                        confidence, last_verified_at
+                        name,status,category,prefecture,city,
+                        open_date,close_date,source_url,source_name,
+                        confidence,last_verified_at
                     )
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
                 """, (
-                    name, status, category, prefecture, city,
-                    open_date, close_date, source_url, source_name, confidence
+                    name,status,category,prefecture,city,
+                    open_date,close_date,source_url,source_name,confidence
                 ))
-
-                cur.execute(
-                    "UPDATE discovery_items SET processed = TRUE WHERE id = %s",
-                    (discovery_id,)
-                )
+                cur.execute("UPDATE discovery_items SET processed = TRUE WHERE id = %s", (discovery_id,))
                 promoted += 1
 
     return {"promoted": promoted, "skipped": skipped, "min_confidence": min_confidence}
