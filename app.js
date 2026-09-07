@@ -1,15 +1,11 @@
-const stores = [
-  {status:'NEW', cls:'green', date:'2026.09.07', name:'スターバックス 札幌すすきの店', place:'北海道 札幌市中央区'},
-  {status:'NEW', cls:'green', date:'2026.09.10', name:'無印良品 イオンモール新潟南', place:'新潟県 新潟市江南区'},
-  {status:'CLOSED', cls:'red', date:'2026.09.05', name:'サイゼリヤ なんばCITY店', place:'大阪府 大阪市中央区'},
-  {status:'テナント募集', cls:'blue', date:'2026.09.06 確認', name:'旧ドトールコーヒー 店舗跡地', place:'東京都 渋谷区'}
-];
-function renderStores(){
-  document.getElementById('storeCards').innerHTML = stores.map(s => `
-    <article class="card">
-      <div class="card-image"><span class="badge ${s.cls}" style="position:absolute;top:10px;left:10px">${s.status}</span></div>
-      <div class="card-body"><div class="date">${s.date}</div><h3>${s.name}</h3><div class="place">⌖ ${s.place}</div></div>
-    </article>`).join('');
-}
-function runSearch(id){const q=document.getElementById(id).value.trim(); if(!q) return; alert(`「${q}」の検索結果ページへ遷移する想定です。`)}
-renderStores();
+const API='https://open-close-map-api.onrender.com';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+function label(s){return {opening:'開店予定',open:'OPEN',closing:'閉店予定',closed:'閉店',tenant:'テナント'}[s]||s||'店舗情報'}
+function dateOf(x){return x.open_date||x.close_date||'日付未確認'}
+function render(items){$('grid').innerHTML=items?.length?items.map(x=>`<article class="store"><div class="cover">${label(x.status)}</div><div class="body"><div class="name">${esc(x.name||'店舗名未確認')}</div><div class="meta">${esc(dateOf(x))}<br>${esc([x.prefecture,x.city].filter(Boolean).join(' ')||'エリア未確認')}${x.confidence?`<br>確度 ${x.confidence}%`:''}</div></div></article>`).join(''):'<div>表示できる店舗情報がありません。</div>'}
+async function stats(){try{const d=await (await fetch(API+'/api/stats')).json();$('storesTotal').textContent=d.stores_total??'-';$('discoveryTotal').textContent=d.discovery_unprocessed??'-';$('todayOpen').textContent=d.today_open??0;$('weekOpen').textContent=d.week_open??0;$('weekClose').textContent=d.week_close??0;$('tenant').textContent=d.tenant_detected??0}catch(e){console.error(e)}}
+async function stores(pref){let u=API+'/api/stores?limit=20'+(pref?'&prefecture='+encodeURIComponent(pref):'');try{const d=await (await fetch(u)).json();render(d.items||[])}catch(e){$('grid').textContent='取得に失敗しました';console.error(e)}}
+document.querySelectorAll('[data-pref]').forEach(b=>b.onclick=()=>stores(b.dataset.pref));
+$('search').onclick=async()=>{const q=$('q').value.trim();const d=await (await fetch(API+'/api/stores?limit=100')).json();render((d.items||[]).filter(x=>[x.name,x.category,x.prefecture,x.city].filter(Boolean).join(' ').includes(q)).slice(0,20))};
+Promise.all([stats(),stores()]);
