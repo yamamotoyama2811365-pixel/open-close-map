@@ -1,5 +1,4 @@
-from .article_enricher import fetch_article_facts
-from .text_rules import detect_prefecture, extract_source_name_from_title
+from .text_rules import detect_prefecture, is_plausible_street_address
 
 def audit_and_clean(database_url, apply=False, limit=100):
     import psycopg
@@ -24,11 +23,14 @@ def audit_and_clean(database_url, apply=False, limit=100):
 
                 addr_pref=detect_prefecture(address or "")
                 status="keep"
-                reason="prefecture_match"
+                reason="valid_address"
 
                 if pref and addr_pref and pref!=addr_pref:
                     status="clear"
                     reason="prefecture_mismatch"
+                elif not is_plausible_street_address(address):
+                    status="clear"
+                    reason="not_plausible_street_address"
                 elif not addr_pref:
                     status="review"
                     reason="address_has_no_prefecture"
@@ -38,7 +40,10 @@ def audit_and_clean(database_url, apply=False, limit=100):
                     if apply:
                         cur.execute("""
                             UPDATE stores
-                            SET address=NULL,floor=NULL,postal_code=NULL,updated_at=NOW()
+                            SET address=NULL,
+                                floor=NULL,
+                                postal_code=NULL,
+                                updated_at=NOW()
                             WHERE id=%s
                         """,(sid,))
                 elif status=="keep":

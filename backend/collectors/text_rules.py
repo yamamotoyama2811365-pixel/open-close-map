@@ -255,3 +255,59 @@ def calculate_confidence(title,summary,status,prefecture,city,event_date,categor
     if facility:s+=4
     if any(k in ((title or "")+" "+(summary or "")) for k in ["公式","発表","プレスリリース"]):s+=10
     return min(s,98)
+
+ADDRESS_REJECT_WORDS = [
+    "オープン","OPEN","開店","閉店","出店","新店舗","ニュース","PR TIMES",
+    "プレスリリース","登場","開催","フェス","イベント","公式サイト","写真・画像"
+]
+
+PLACE_WORDS = [
+    "公園","駅","空港","ホール","ドーム","アリーナ","会館","広場","センター",
+    "百貨店","モール","ショッピングセンター","ホテル","ビル","タワー","プラザ","館"
+]
+
+def is_plausible_street_address(address):
+    """
+    住所として保存してよい文字列かを厳しめに判定。
+    施設名だけ・記事見出し断片・市区町村止まりは落とす。
+    """
+    if not address:
+        return False
+
+    a = norm(address)
+
+    # 明らかな記事文言を含むものは却下
+    if any(w.lower() in a.lower() for w in ADDRESS_REJECT_WORDS):
+        return False
+
+    # 都道府県必須
+    pref = detect_prefecture(a)
+    if not pref:
+        return False
+
+    # 市区町村相当が必要
+    if not re.search(r'(市|区|町|村)', a):
+        return False
+
+    # 原則、番地/丁目/号のいずれかを要求
+    has_number = bool(re.search(r'\d', a))
+    has_address_unit = bool(re.search(r'(丁目|番地|番|号|条|線|－|-|ー)', a))
+
+    if not (has_number and has_address_unit):
+        return False
+
+    # 「○○公園」など施設名だけで終わっているものを除外
+    # ただし番地まで続いていれば住所として可
+    for w in PLACE_WORDS:
+        if a.endswith(w) and not re.search(r'\d', a[a.rfind(w)+len(w):]):
+            return False
+
+    # 末尾の不自然な記号
+    if a.endswith(("-", "－", "ー", "・", "/", "：", ":")):
+        return False
+
+    # 長すぎる見出し断片は却下
+    if len(a) > 120:
+        return False
+
+    return True

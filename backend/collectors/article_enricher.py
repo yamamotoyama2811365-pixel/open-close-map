@@ -6,7 +6,7 @@ from .news_resolver import resolve_google_news_url
 from .text_rules import (
     extract_address,extract_facility_name,extract_floor,extract_postal_code,
     detect_prefecture,detect_city,norm,address_matches_expected_prefecture,
-    NEGATIVE_ADDRESS_LABELS
+    NEGATIVE_ADDRESS_LABELS,is_plausible_street_address
 )
 
 HEADERS={
@@ -195,6 +195,15 @@ def fetch_article_facts(url, expected_prefecture=None, expected_store_name=None)
             result["postal_code"]=None
             result["floor"]=None
             result["quality"]="rejected_prefecture_mismatch"
+
+
+# final street-address plausibility check
+if result["address"] and not is_plausible_street_address(result["address"]):
+    # Keep facility name if available, but do not store a fake street address
+    result["address"] = None
+    result["postal_code"] = None
+    result["floor"] = None
+    result["quality"] = "rejected_not_street_address"
 
     result["prefecture"]=detect_prefecture(result["address"] or "")
     result["city"]=detect_city(result["address"] or "")

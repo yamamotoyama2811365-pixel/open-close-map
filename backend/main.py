@@ -12,7 +12,7 @@ from collectors.news_resolver import resolve_google_news_url
 from collectors.rescue_processor import rescue_sources
 from collectors.address_quality import audit_and_clean
 
-app=FastAPI(title="Open Close Map API",version="1.1.0")
+app=FastAPI(title="Open Close Map API",version="1.2.0")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"])
 DATABASE_URL=os.getenv("DATABASE_URL","").strip()
 def db_conn():return psycopg.connect(DATABASE_URL) if DATABASE_URL else None
@@ -58,7 +58,7 @@ def init_db():
 def startup():init_db()
 
 @app.get("/")
-def root():return {"service":"open-close-map-api","status":"ok","version":"1.1.0","time":datetime.now(timezone.utc).isoformat()}
+def root():return {"service":"open-close-map-api","status":"ok","version":"1.2.0","time":datetime.now(timezone.utc).isoformat()}
 @app.get("/health")
 def health():return {"ok":True,"database_configured":bool(DATABASE_URL),"time":datetime.now(timezone.utc).isoformat()}
 
