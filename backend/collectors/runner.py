@@ -4,7 +4,7 @@ from .sources import RSS_SOURCES
 from .text_rules import (
     classify_title,detect_prefecture,detect_city,detect_category,extract_date,
     clean_store_name,calculate_confidence,extract_address,extract_facility_name,
-    extract_floor,extract_postal_code
+    extract_floor,extract_postal_code,extract_source_name_from_title
 )
 
 def fingerprint(title,url):
@@ -25,6 +25,16 @@ def run_collectors(database_url):
                     url=(entry.get("link") or "").strip()
                     summary=(entry.get("summary") or "").strip()
                     if not title or not url:continue
+
+                    src_obj=entry.get("source") or {}
+                    publisher_name=None
+                    publisher_home=None
+                    try:
+                        publisher_name=(src_obj.get("title") or "").strip() or None
+                        publisher_home=(src_obj.get("href") or "").strip() or None
+                    except Exception:
+                        pass
+                    publisher_name=publisher_name or extract_source_name_from_title(title)
 
                     status,base=classify_title(title)
                     if status is None:continue
@@ -58,9 +68,9 @@ def run_collectors(database_url):
                         detected_status,prefecture,city,confidence,raw_summary,
                         store_name_candidate,event_date_candidate,category_candidate,
                         address_candidate,facility_name_candidate,floor_candidate,
-                        postal_code_candidate
+                        postal_code_candidate,publisher_name,publisher_home_url
                     )
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT(fingerprint) DO UPDATE SET
                         prefecture=COALESCE(EXCLUDED.prefecture,discovery_items.prefecture),
                         city=COALESCE(EXCLUDED.city,discovery_items.city),
@@ -71,12 +81,14 @@ def run_collectors(database_url):
                         address_candidate=COALESCE(EXCLUDED.address_candidate,discovery_items.address_candidate),
                         facility_name_candidate=COALESCE(EXCLUDED.facility_name_candidate,discovery_items.facility_name_candidate),
                         floor_candidate=COALESCE(EXCLUDED.floor_candidate,discovery_items.floor_candidate),
-                        postal_code_candidate=COALESCE(EXCLUDED.postal_code_candidate,discovery_items.postal_code_candidate)
+                        postal_code_candidate=COALESCE(EXCLUDED.postal_code_candidate,discovery_items.postal_code_candidate),
+                        publisher_name=COALESCE(EXCLUDED.publisher_name,discovery_items.publisher_name),
+                        publisher_home_url=COALESCE(EXCLUDED.publisher_home_url,discovery_items.publisher_home_url)
                     RETURNING (xmax=0)
                     """,(
                         fingerprint(title,url),title,source["name"],url,published,status,pref,
                         city,conf,summary[:2000] if summary else None,name,event,cat,
-                        addr,facility,floor,postal
+                        addr,facility,floor,postal,publisher_name,publisher_home
                     ))
 
                     if cur.fetchone()[0]:inserted+=1

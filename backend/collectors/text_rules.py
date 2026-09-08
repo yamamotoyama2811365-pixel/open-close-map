@@ -311,3 +311,70 @@ def is_plausible_street_address(address):
         return False
 
     return True
+
+EVENT_ONLY_KEYWORDS = [
+    "出店者募集","物産展","フェス","イベント","キッチンカー",
+    "マルシェ","催事","期間限定販売","試合","秋田戦","写真・画像"
+]
+
+PERMANENT_OPEN_KEYWORDS = [
+    "新店舗","新店","開店","グランドオープン","リニューアルオープン",
+    "常設店","ロードサイド店舗","店舗をオープン","店をオープン",
+    "号店","店舗目"
+]
+
+def is_likely_non_store_event(title, summary=""):
+    t = f"{title or ''} {summary or ''}"
+
+    # strong exclusions
+    if "出店者募集" in t:
+        return True
+
+    # event/temporary appearance terms
+    has_event = any(k in t for k in EVENT_ONLY_KEYWORDS)
+
+    # "物産展に登場", sports-event vendor, etc.
+    if "物産展" in t and ("登場" in t or "出店" in t):
+        return True
+    if ("戦" in t or "試合" in t) and "出店" in t:
+        return True
+    if "フェス" in t and ("出店" in t or "募集" in t):
+        return True
+
+    # If event term exists but clear permanent-store wording also exists,
+    # keep it. Otherwise exclude.
+    if has_event:
+        if any(k in t for k in PERMANENT_OPEN_KEYWORDS):
+            return False
+        return True
+
+    return False
+
+# Override classifier with event filtering.
+def classify_title(title):
+    if is_likely_non_store_event(title):
+        return None,0
+    if any(k in title for k in TENANT_KEYWORDS): return "tenant",65
+    if any(k in title for k in CLOSE_KEYWORDS): return "closing",60
+    if any(k in title for k in OPEN_KEYWORDS): return "opening",60
+    return None,0
+
+_old_extract_facility_name = extract_facility_name
+
+def extract_facility_name(text, address=None):
+    v = _old_extract_facility_name(text, address)
+    if not v:
+        return None
+
+    bad = [
+        "初出店","出店者","出店","募集","オープン","閉店",
+        "写真・画像","ニュース","PR TIMES"
+    ]
+    vv = norm(v)
+    if vv.startswith("の"):
+        return None
+    if any(x in vv for x in bad):
+        return None
+    if len(vv) < 2:
+        return None
+    return vv

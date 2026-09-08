@@ -1,16 +1,17 @@
 from .source_relocator import relocate_source
 from .article_enricher import fetch_article_facts
-from .text_rules import calculate_confidence, extract_source_name_from_title
+from .text_rules import (
+    calculate_confidence,
+    extract_source_name_from_title,
+    is_likely_non_store_event
+)
 
-def rescue_sources(database_url, batch_size=5):
+def rescue_sources(database_url,batch_size=5):
     import psycopg
-    from datetime import datetime, timezone
 
-    scanned=relocated=address_found=store_updated=unsupported=failed=rejected=0
+    scanned=relocated=address_found=store_updated=unsupported=failed=rejected=excluded_event=0
     results=[]
 
-    # Fetch targets first. Prefer never-attempted items so the same unsupported
-    # five records don't block the queue forever.
     with psycopg.connect(database_url) as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -34,6 +35,7 @@ def rescue_sources(database_url, batch_size=5):
                     LIMIT 1
                 ) d ON TRUE
                 WHERE (s.address IS NULL OR s.address='')
+                  AND COALESCE(s.status,'') <> 'excluded'
                   AND d.rescue_attempted_at IS NULL
                 ORDER BY s.id DESC
                 LIMIT %s
@@ -55,6 +57,28 @@ def rescue_sources(database_url, batch_size=5):
         }
 
         try:
+            if is_likely_non_store_event(title,summary or ""):
+                excluded_event += 1
+                item["excluded"] = True
+                item["reason"] = "non_store_event"
+                with psycopg.connect(database_url) as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            UPDATE discovery_items
+                            SET rescue_attempted_at=NOW(),
+                                rescue_status='excluded_event',
+                                rescue_error=NULL,
+                                processed=TRUE
+                            WHERE id=%s
+                        """,(did,))
+                        cur.execute("""
+                            UPDATE stores
+                            SET status='excluded', updated_at=NOW()
+                            WHERE id=%s
+                        """,(store_id,))
+                results.append(item)
+                continue
+
             real_publisher=extract_source_name_from_title(title) or source_name
             item["publisher"]=real_publisher
 
@@ -84,29 +108,31 @@ def rescue_sources(database_url, batch_size=5):
 
             relocated+=1
             real_url=relocation.get("url")
-
             facts=fetch_article_facts(
                 real_url,
                 expected_prefecture=pref,
                 expected_store_name=store_name
             )
 
-            item["facts"]={
-                "address":facts.get("address"),
-                "facility_name":facts.get("facility_name"),
-                "floor":facts.get("floor"),
-                "postal_code":facts.get("postal_code"),
-                "method":facts.get("method"),
-                "quality":facts.get("quality"),
-                "resolved_url":facts.get("resolved_url")
-            }
-
             addr=facts.get("address")
             facility=facts.get("facility_name")
             floor=facts.get("floor")
             postal=facts.get("postal_code")
 
-            if facts.get("quality") in ("rejected_prefecture_mismatch","rejected_not_street_address"):
+            item["facts"]={
+                "address":addr,
+                "facility_name":facility,
+                "floor":floor,
+                "postal_code":postal,
+                "method":facts.get("method"),
+                "quality":facts.get("quality"),
+                "resolved_url":facts.get("resolved_url")
+            }
+
+            if facts.get("quality") in (
+                "rejected_prefecture_mismatch",
+                "rejected_not_street_address"
+            ):
                 rejected+=1
 
             new_conf=calculate_confidence(
@@ -117,20 +143,22 @@ def rescue_sources(database_url, batch_size=5):
 
             with psycopg.connect(database_url) as conn:
                 with conn.cursor() as cur:
+                    # Explicit casts avoid PostgreSQL IndeterminateDatatype
+                    # when a value is NULL.
                     cur.execute("""
                         UPDATE discovery_items
-                        SET resolved_source_url=%s,
-                            address_candidate=CASE WHEN %s IS NOT NULL THEN %s ELSE address_candidate END,
-                            facility_name_candidate=COALESCE(%s,facility_name_candidate),
-                            floor_candidate=CASE WHEN %s IS NOT NULL THEN %s ELSE floor_candidate END,
-                            postal_code_candidate=CASE WHEN %s IS NOT NULL THEN %s ELSE postal_code_candidate END,
+                        SET resolved_source_url=%s::text,
+                            address_candidate=COALESCE(%s::text,address_candidate),
+                            facility_name_candidate=COALESCE(%s::text,facility_name_candidate),
+                            floor_candidate=COALESCE(%s::text,floor_candidate),
+                            postal_code_candidate=COALESCE(%s::text,postal_code_candidate),
                             confidence=GREATEST(confidence,%s),
                             rescue_attempted_at=NOW(),
                             rescue_status=%s,
                             rescue_error=NULL
                         WHERE id=%s
                     """,(
-                        real_url,addr,addr,facility,floor,floor,postal,postal,confidence,
+                        real_url,addr,facility,floor,postal,confidence,
                         "success_address" if addr else "relocated_no_valid_address",
                         did
                     ))
@@ -139,12 +167,12 @@ def rescue_sources(database_url, batch_size=5):
                         address_found+=1
                         cur.execute("""
                             UPDATE stores
-                            SET address=%s,
-                                facility_name=COALESCE(%s,facility_name),
-                                floor=%s,
-                                postal_code=%s,
-                                source_url=%s,
-                                source_name=COALESCE(%s,source_name),
+                            SET address=%s::text,
+                                facility_name=COALESCE(%s::text,facility_name),
+                                floor=%s::text,
+                                postal_code=%s::text,
+                                source_url=%s::text,
+                                source_name=COALESCE(%s::text,source_name),
                                 confidence=GREATEST(confidence,%s),
                                 updated_at=NOW()
                             WHERE id=%s
@@ -178,6 +206,7 @@ def rescue_sources(database_url, batch_size=5):
         "address_found":address_found,
         "store_updated":store_updated,
         "rejected_address":rejected,
+        "excluded_event":excluded_event,
         "unsupported_publisher":unsupported,
         "failed":failed,
         "results":results

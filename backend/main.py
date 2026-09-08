@@ -13,8 +13,9 @@ from collectors.address_audit import audit_addresses
 from collectors.news_resolver import resolve_google_news_url
 from collectors.rescue_processor import rescue_sources
 from collectors.address_quality import audit_and_clean
+from collectors.non_store_quality import audit_non_store_events
 
-app=FastAPI(title="Open Close Map API",version="1.2.2")
+app=FastAPI(title="Open Close Map API",version="1.2.3")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -116,7 +117,9 @@ def init_db():
                 "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS postal_code_candidate TEXT",
                 "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS rescue_attempted_at TIMESTAMPTZ",
                 "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS rescue_status TEXT",
-                "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS rescue_error TEXT"
+                "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS rescue_error TEXT",
+                "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS publisher_name TEXT",
+                "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS publisher_home_url TEXT"
             ]:
                 cur.execute(q)
 
@@ -129,7 +132,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.2.2",
+        "version":"1.2.3",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -166,8 +169,11 @@ def stats():
                         WHERE status IN('closed','closing')
                           AND close_date BETWEEN CURRENT_DATE AND CURRENT_DATE+INTERVAL '7 days'
                     ),
-                    COUNT(*),
-                    COUNT(*) FILTER(WHERE address IS NOT NULL AND address<>'')
+                    COUNT(*) FILTER(WHERE COALESCE(status,'') <> 'excluded'),
+                    COUNT(*) FILTER(
+                        WHERE COALESCE(status,'') <> 'excluded'
+                          AND address IS NOT NULL AND address<>''
+                    )
                 FROM stores
             """)
             today,weeko,weekc,total,withaddr=cur.fetchone()
@@ -210,6 +216,9 @@ def stores(
 
     clauses=[]
     params=[]
+
+    if not status:
+        clauses.append("COALESCE(status,'') <> 'excluded'")
 
     if status:
         clauses.append("status=%s")
@@ -310,6 +319,7 @@ def nearby(store_id:int,limit:int=Query(default=6,ge=1,le=20)):
                 SELECT id,name,status,category,facility_name
                 FROM stores
                 WHERE id<>%s
+                  AND COALESCE(status,'') <> 'excluded'
                   AND COALESCE(prefecture,'')=COALESCE(%s,'')
                   AND COALESCE(city,'')=COALESCE(%s,'')
                 ORDER BY id DESC
@@ -376,7 +386,8 @@ def area_summary(store_id:int):
                     COUNT(*) FILTER(WHERE status IN('open','opening')),
                     COUNT(*) FILTER(WHERE status IN('closed','closing'))
                 FROM stores
-                WHERE COALESCE(prefecture,'')=COALESCE(%s,'')
+                WHERE COALESCE(status,'') <> 'excluded'
+                  AND COALESCE(prefecture,'')=COALESCE(%s,'')
                   AND COALESCE(city,'')=COALESCE(%s,'')
             """,(pref,city))
             total,opening,closing=cur.fetchone()
@@ -413,7 +424,8 @@ def activity_score(store_id:int):
                     COUNT(*) FILTER(WHERE status IN('open','opening')),
                     COUNT(*) FILTER(WHERE status IN('closed','closing'))
                 FROM stores
-                WHERE COALESCE(prefecture,'')=COALESCE(%s,'')
+                WHERE COALESCE(status,'') <> 'excluded'
+                  AND COALESCE(prefecture,'')=COALESCE(%s,'')
                   AND COALESCE(city,'')=COALESCE(%s,'')
             """,(pref,city))
             total,opening,closing=cur.fetchone()
@@ -557,3 +569,15 @@ def address_quality_clean():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**audit_and_clean(DATABASE_URL,apply=True,limit=100)}
+
+@app.get("/api/non-store-audit")
+def non_store_audit():
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True,**audit_non_store_events(DATABASE_URL,apply=False,limit=200)}
+
+@app.post("/api/non-store-clean")
+def non_store_clean():
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True,**audit_non_store_events(DATABASE_URL,apply=True,limit=200)}

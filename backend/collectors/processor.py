@@ -1,5 +1,5 @@
 from .article_enricher import fetch_article_facts
-from .text_rules import calculate_confidence
+from .text_rules import calculate_confidence,is_likely_non_store_event
 
 def _propagate_to_stores(cur, candidate):
     """
@@ -62,7 +62,7 @@ def enrich_candidates(database_url,limit=50,include_processed=True):
                     addr,facility,floor,postal
                 )=row
 
-                facts=fetch_article_facts(url)
+                facts=fetch_article_facts(url,expected_prefecture=pref,expected_store_name=name)
 
                 addr=addr or facts.get("address")
                 facility=facility or facts.get("facility_name")
@@ -121,7 +121,8 @@ def promote_candidates(database_url,min_confidence=80,enrich_limit=40):
                        prefecture,city,event_date_candidate,
                        COALESCE(resolved_source_url,source_url),
                        source_name,confidence,address_candidate,
-                       facility_name_candidate,floor_candidate,postal_code_candidate
+                       facility_name_candidate,floor_candidate,postal_code_candidate,
+                       title,raw_summary
                 FROM discovery_items
                 WHERE processed=FALSE
                   AND confidence >= %s
@@ -131,7 +132,12 @@ def promote_candidates(database_url,min_confidence=80,enrich_limit=40):
             """,(min_confidence,))
 
             for row in cur.fetchall():
-                did,name,ds,cat,pref,city,event,url,sname,conf,addr,facility,floor,postal=row
+                did,name,ds,cat,pref,city,event,url,sname,conf,addr,facility,floor,postal,title,summary=row
+                if is_likely_non_store_event(title,summary or ""):
+                    cur.execute("UPDATE discovery_items SET processed=TRUE,rescue_status='excluded_event' WHERE id=%s",(did,))
+                    skipped+=1
+                    continue
+
                 status="opening" if ds=="opening" else "closing"
                 od=event if status=="opening" else None
                 cd=event if status=="closing" else None
