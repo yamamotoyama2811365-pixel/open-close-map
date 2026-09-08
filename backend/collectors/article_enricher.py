@@ -2,6 +2,7 @@ import json
 import re
 import httpx
 from bs4 import BeautifulSoup
+from .news_resolver import resolve_google_news_url
 from .text_rules import (
     extract_address,extract_facility_name,extract_floor,extract_postal_code,
     detect_prefecture,detect_city,norm
@@ -85,6 +86,15 @@ def fetch_article_facts(url):
 
     if not url or not url.startswith(("http://","https://")):
         return result
+
+    resolution = resolve_google_news_url(url)
+    if resolution.get("ok") and resolution.get("url"):
+        url = resolution["url"]
+        result["resolved_url"] = url
+        result["resolution_method"] = resolution.get("method")
+    else:
+        result["resolution_method"] = resolution.get("method")
+        result["resolution_error"] = resolution.get("error") or resolution.get("decoder_error")
 
     try:
         with httpx.Client(

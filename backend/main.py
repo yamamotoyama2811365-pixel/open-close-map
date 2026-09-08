@@ -8,8 +8,9 @@ from collectors.runner import run_collectors
 from collectors.processor import promote_candidates,enrich_candidates
 from collectors.article_enricher import fetch_article_facts
 from collectors.address_audit import audit_addresses
+from collectors.news_resolver import resolve_google_news_url
 
-app=FastAPI(title="Open Close Map API",version="0.8.0")
+app=FastAPI(title="Open Close Map API",version="0.9.0")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"])
 DATABASE_URL=os.getenv("DATABASE_URL","").strip()
 def db_conn():return psycopg.connect(DATABASE_URL) if DATABASE_URL else None
@@ -55,7 +56,7 @@ def init_db():
 def startup():init_db()
 
 @app.get("/")
-def root():return {"service":"open-close-map-api","status":"ok","version":"0.8.0","time":datetime.now(timezone.utc).isoformat()}
+def root():return {"service":"open-close-map-api","status":"ok","version":"0.9.0","time":datetime.now(timezone.utc).isoformat()}
 @app.get("/health")
 def health():return {"ok":True,"database_configured":bool(DATABASE_URL),"time":datetime.now(timezone.utc).isoformat()}
 
@@ -138,3 +139,18 @@ def address_audit(limit:int=Query(default=50,ge=1,le=100)):
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True, **audit_addresses(DATABASE_URL, limit=limit)}
+
+@app.get("/api/resolve-news-url")
+def resolve_news_url(url:str):
+    """Google News URLを元記事URLに解決するテスト。DBは更新しない。"""
+    return resolve_google_news_url(url)
+
+@app.post("/api/resolve-and-backfill")
+def resolve_and_backfill(limit:int=Query(default=100,ge=1,le=300)):
+    """
+    Google News URLを元記事URLへ解決し、記事本文から住所を再取得し、
+    discovery_items と既存 stores へ反映する。
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True, **enrich_candidates(DATABASE_URL,limit=limit,include_processed=True)}
