@@ -24,25 +24,24 @@ def run_collectors(database_url):
                     title=(entry.get("title") or "").strip()
                     url=(entry.get("link") or "").strip()
                     summary=(entry.get("summary") or "").strip()
-                    if not title or not url: continue
+                    if not title or not url:continue
 
                     status,base=classify_title(title)
-                    if status is None: continue
+                    if status is None:continue
 
-                    text=title+" "+summary
+                    text=title+"\n"+summary
                     pref=detect_prefecture(text)
                     city=detect_city(text)
                     cat=detect_category(text)
                     event=extract_date(text)
                     name=clean_store_name(title)
-
-                    address=extract_address(text)
-                    facility=extract_facility_name(text,address)
+                    addr=extract_address(text)
+                    facility=extract_facility_name(text,addr)
                     floor=extract_floor(text)
                     postal=extract_postal_code(text)
 
                     conf=max(base,calculate_confidence(
-                        title,summary,status,pref,city,event,cat,address,facility
+                        title,summary,status,pref,city,event,cat,addr,facility
                     ))
 
                     published=None
@@ -54,15 +53,15 @@ def run_collectors(database_url):
                         )
 
                     cur.execute("""
-                    INSERT INTO discovery_items (
+                    INSERT INTO discovery_items(
                         fingerprint,title,source_name,source_url,published_at,
                         detected_status,prefecture,city,confidence,raw_summary,
                         store_name_candidate,event_date_candidate,category_candidate,
                         address_candidate,facility_name_candidate,floor_candidate,
                         postal_code_candidate
                     )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT (fingerprint) DO UPDATE SET
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT(fingerprint) DO UPDATE SET
                         prefecture=COALESCE(EXCLUDED.prefecture,discovery_items.prefecture),
                         city=COALESCE(EXCLUDED.city,discovery_items.city),
                         confidence=GREATEST(discovery_items.confidence,EXCLUDED.confidence),
@@ -73,14 +72,14 @@ def run_collectors(database_url):
                         facility_name_candidate=COALESCE(EXCLUDED.facility_name_candidate,discovery_items.facility_name_candidate),
                         floor_candidate=COALESCE(EXCLUDED.floor_candidate,discovery_items.floor_candidate),
                         postal_code_candidate=COALESCE(EXCLUDED.postal_code_candidate,discovery_items.postal_code_candidate)
-                    RETURNING (xmax=0) AS inserted
+                    RETURNING (xmax=0)
                     """,(
-                        fingerprint(title,url),title,source["name"],url,published,status,
-                        pref,city,conf,summary[:1500] if summary else None,name,event,cat,
-                        address,facility,floor,postal
+                        fingerprint(title,url),title,source["name"],url,published,status,pref,
+                        city,conf,summary[:2000] if summary else None,name,event,cat,
+                        addr,facility,floor,postal
                     ))
 
-                    if cur.fetchone()[0]: inserted+=1
-                    else: duplicates+=1
+                    if cur.fetchone()[0]:inserted+=1
+                    else:duplicates+=1
 
     return {"fetched":fetched,"inserted":inserted,"duplicates":duplicates,"sources":len(RSS_SOURCES)}

@@ -28,13 +28,12 @@ CATEGORY_RULES={
 "飲食店":["レストラン","食堂","飲食店"]
 }
 
-FACILITY_KEYWORDS = [
-    "イオンモール","イオン","アリオ","ステラプレイス","パルコ","PARCO","ルミネ","マルイ",
-    "丸井今井","三越","大丸","東急","ロフト","ミーナ","ココノススキノ","COCONO SUSUKINO",
-    "サッポロファクトリー","赤れんがテラス","moyuk SAPPORO","モユクサッポロ",
-    "BiVi","ビビ","イトーヨーカドー","ショッピングセンター","ショッピングモール",
-    "モール","プラザ","タワー","ビル","館","センター"
-]
+def norm(text):
+    if not text:
+        return ""
+    text = text.replace("\u3000"," ")
+    text = re.sub(r'[ \t]+',' ',text)
+    return text.strip()
 
 def classify_title(title):
     if any(k in title for k in TENANT_KEYWORDS): return "tenant",65
@@ -43,114 +42,149 @@ def classify_title(title):
     return None,0
 
 def detect_prefecture(text):
-    return next((p for p in PREFECTURES if p in text),None)
+    return next((p for p in PREFECTURES if p in (text or "")),None)
 
 def detect_city(text):
-    # 政令市の区まで拾える場合は「札幌市中央区」のように保持
-    m=re.search(r'([一-龥ぁ-んァ-ヶー]{1,10}市[一-龥ぁ-んァ-ヶー]{1,10}区)',text)
-    if m: return m.group(1)
-    m=re.search(r'([一-龥ぁ-んァ-ヶー]{1,12}(?:市|区|町|村))',text)
+    t=text or ""
+    m=re.search(r'([一-龥ぁ-んァ-ヶー]{1,10}市[一-龥ぁ-んァ-ヶー]{1,10}区)',t)
+    if m:return m.group(1)
+    m=re.search(r'([一-龥ぁ-んァ-ヶー]{1,15}(?:市|区|町|村))',t)
     return m.group(1) if m else None
 
 def detect_category(text):
     for c,ks in CATEGORY_RULES.items():
-        if any(k in text for k in ks): return c
+        if any(k in (text or "") for k in ks): return c
     return None
 
 def extract_date(text):
-    m=re.search(r'(20\d{2})[年/.\-]\s*(\d{1,2})[月/.\-]\s*(\d{1,2})日?',text)
+    t=text or ""
+    m=re.search(r'(20\d{2})[年/.\-]\s*(\d{1,2})[月/.\-]\s*(\d{1,2})日?',t)
     if m:
         try:return date(int(m.group(1)),int(m.group(2)),int(m.group(3)))
         except:return None
-    m=re.search(r'(\d{1,2})月\s*(\d{1,2})日',text)
+    m=re.search(r'(\d{1,2})月\s*(\d{1,2})日',t)
     if m:
         try:return date(date.today().year,int(m.group(1)),int(m.group(2)))
         except:return None
     return None
 
 def clean_store_name(title):
-    t=re.sub(r'\s*[-｜|]\s*[^-｜|]+$','',title).strip()
+    t=re.sub(r'\s*[-｜|]\s*[^-｜|]+$','',title or '').strip()
     t=re.sub(r'【[^】]+】','',t)
     t=re.sub(r'(が|を|は)?\s*(新規)?(オープン|OPEN|開店|閉店|閉館|営業終了|出店).*$','',t,flags=re.I)
-    return t.strip(' 「」『』【】:：')[:120] or title[:120]
-
-def normalize_space(text):
-    return re.sub(r'\s+',' ',text or '').strip()
+    return t.strip(' 「」『』【】:：')[:120] or (title or "")[:120]
 
 def extract_postal_code(text):
-    m=re.search(r'〒?\s*(\d{3})[-ー－](\d{4})', text or '')
+    m=re.search(r'〒?\s*(\d{3})[-ー－](\d{4})',text or '')
     return f"{m.group(1)}-{m.group(2)}" if m else None
 
 def extract_floor(text):
-    patterns = [
-        r'([地下Bｂ]?\s*\d{1,2}\s*[階FＦ])',
-        r'(B\d{1,2}F)',
-        r'(\d{1,2}F)',
+    t=text or ""
+    for p in [
+        r'((?:地下|B|Ｂ)\s*\d{1,2}\s*(?:階|F|Ｆ))',
+        r'(\d{1,2}\s*(?:階|F|Ｆ))'
+    ]:
+        m=re.search(p,t,re.I)
+        if m:return re.sub(r'\s+','',m.group(1))
+    return None
+
+def clean_address_candidate(value):
+    if not value:return None
+    v=norm(value)
+    v=re.sub(r'^〒?\s*\d{3}[-ー－]\d{4}\s*','',v)
+    # trailing labels/noise
+    v=re.split(r'(?:TEL|電話|営業時間|アクセス|URL|公式|定休日|客室数|開業日|予約)',v,maxsplit=1)[0]
+    v=v.strip("　 ,、。;；|｜[]［］")
+    if not detect_prefecture(v):
+        return None
+    return v[:160]
+
+def extract_labeled_value(text, labels):
+    """
+    ［所在地］ xxx / 【所在地】xxx / 所在地：xxx / 所在地 xxx
+    などを最優先で取得。
+    """
+    if not text:return None
+    t=text.replace('\r','\n')
+    label_alt='|'.join(re.escape(x) for x in labels)
+    patterns=[
+        rf'[［【\[]\s*(?:{label_alt})\s*[］】\]]\s*[:：]?\s*([^\n\r]+)',
+        rf'(?:^|\n)\s*(?:{label_alt})\s*[:：]\s*([^\n\r]+)',
+        rf'(?:^|\n)\s*(?:{label_alt})\s+([^\n\r]+)',
     ]
     for p in patterns:
-        m=re.search(p,text or '',re.I)
+        m=re.search(p,t,re.I|re.M)
         if m:
-            return re.sub(r'\s+','',m.group(1))
+            return norm(m.group(1))
     return None
 
 def extract_address(text):
-    """
-    公開記事内に明示された日本住所を事実情報として抽出。
-    推測補完はしない。
-    """
-    if not text: return None
-    t = normalize_space(text)
-    pref = detect_prefecture(t)
-    if not pref:
-        return None
+    if not text:return None
 
-    start = t.find(pref)
-    if start < 0:
-        return None
-
-    tail = t[start:start+160]
-
-    # 句読点、改行相当、ラベル終端になりやすい文字で切る
-    tail = re.split(r'[。．\n\r<>]|(?:TEL|電話|営業時間|アクセス|店舗名|店名|公式)', tail, maxsplit=1)[0]
-
-    # 都道府県 + 市区町村 + 町域 + 番地程度まで
-    # 例: 北海道札幌市中央区南1条西3丁目3-27
-    addr_re = re.compile(
-        r'(' + re.escape(pref) +
-        r'[一-龥ぁ-んァ-ヶー0-9０-９\-ー丁目番地号ノの\s]{2,90}?' +
-        r'(?:\d+[丁目番地号\-ー]\d*(?:[\-ー]\d+)*|\d+丁目))'
+    # 1) ラベル形式を最優先
+    labeled=extract_labeled_value(
+        text,
+        ["所在地","住所","店舗所在地","施設所在地","本社所在地","開業地"]
     )
-    m = addr_re.search(tail)
+    addr=clean_address_candidate(labeled)
+    if addr:return addr
+
+    # 2) 本文全体から郵便番号＋住所
+    t=norm(text)
+    m=re.search(
+        r'〒?\s*\d{3}[-ー－]\d{4}\s*('
+        + '|'.join(map(re.escape,PREFECTURES))
+        + r')[一-龥ぁ-んァ-ヶー0-9０-９\-ー丁目番地号ノの\s]{3,120}',
+        t
+    )
     if m:
-        addr = normalize_space(m.group(1))
-        addr = addr.replace('  ',' ')
-        return addr[:140]
+        full=m.group(0)
+        full=re.sub(r'^〒?\s*\d{3}[-ー－]\d{4}\s*','',full)
+        full=re.split(r'(?:TEL|電話|営業時間|アクセス|URL|公式|定休日)',full,maxsplit=1)[0]
+        return clean_address_candidate(full)
 
-    # 番地がなくても市区町村＋町域まで明示なら保存
-    simple = re.match(
-        r'(' + re.escape(pref) + r'[一-龥ぁ-んァ-ヶー]{1,20}(?:市|区|町|村)[一-龥ぁ-んァ-ヶー0-9０-９\-ー丁目\s]{1,50})',
-        tail
-    )
-    return normalize_space(simple.group(1))[:140] if simple else None
+    # 3) 都道府県から始まる番地住所
+    for pref in PREFECTURES:
+        idx=t.find(pref)
+        if idx<0:continue
+        tail=t[idx:idx+180]
+        m=re.match(
+            re.escape(pref)
+            + r'[一-龥ぁ-んァ-ヶー]{1,20}(?:市|区|町|村)'
+            + r'[一-龥ぁ-んァ-ヶー0-9０-９\-ー丁目番地号ノの\s]{1,90}',
+            tail
+        )
+        if m:
+            candidate=re.split(r'(?:TEL|電話|営業時間|アクセス|URL|公式|定休日)',m.group(0),maxsplit=1)[0]
+            # 番号要素があるものを優先
+            if re.search(r'\d',candidate):
+                return clean_address_candidate(candidate)
+    return None
 
 def extract_facility_name(text, address=None):
-    if not text: return None
-    t=normalize_space(text)
+    if not text:return None
 
-    # 「○○ビル」「○○モール」「○○館」など
-    patterns = [
-        r'([A-Za-z0-9一-龥ぁ-んァ-ヶー・＆&\-\s]{2,35}(?:ショッピングセンター|ショッピングモール|モール|プラザ|タワー|ビル|館|センター))',
-        r'((?:イオンモール|アリオ|ルミネ|PARCO|パルコ|大丸|三越|丸井今井|東急|COCONO SUSUKINO|ココノススキノ|サッポロファクトリー|赤れんがテラス|moyuk SAPPORO|モユクサッポロ)[A-Za-z0-9一-龥ぁ-んァ-ヶー・＆&\-\s]{0,20})'
+    # 名称ラベル最優先
+    labeled=extract_labeled_value(
+        text,
+        ["名称","名 称","店舗名","施設名","ホテル名","店名"]
+    )
+    if labeled:
+        v=re.split(r'(?:所在地|住所|TEL|電話|営業時間|開業日)',labeled,maxsplit=1)[0]
+        v=norm(v).strip("、。:：")
+        if 2<=len(v)<=80:
+            return v
+
+    t=norm(text)
+    patterns=[
+        r'([A-Za-z0-9一-龥ぁ-んァ-ヶー・＆&\-\s]{2,50}(?:ショッピングセンター|ショッピングモール|モール|プラザ|タワー|ビル|ホテル|館|センター))'
     ]
     for p in patterns:
         m=re.search(p,t,re.I)
         if m:
-            name=normalize_space(m.group(1)).strip("、。:：")
-            # 住所本文を丸ごと拾ったようなものを除外
-            if address and name in address:
-                continue
-            if 2 <= len(name) <= 60:
-                return name
+            v=norm(m.group(1)).strip("、。:：")
+            if address and v in address:continue
+            if 2<=len(v)<=80:return v
     return None
 
 def calculate_confidence(title,summary,status,prefecture,city,event_date,category,address=None,facility=None):
@@ -160,7 +194,7 @@ def calculate_confidence(title,summary,status,prefecture,city,event_date,categor
     if city:s+=5
     if event_date:s+=10
     if category:s+=5
-    if address:s+=8
-    if facility:s+=3
-    if any(k in (title+" "+summary) for k in ["公式","発表","プレスリリース"]):s+=10
+    if address:s+=10
+    if facility:s+=4
+    if any(k in ((title or "")+" "+(summary or "")) for k in ["公式","発表","プレスリリース"]):s+=10
     return min(s,98)
