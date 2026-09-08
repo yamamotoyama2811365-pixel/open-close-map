@@ -9,8 +9,9 @@ from collectors.processor import promote_candidates,enrich_candidates
 from collectors.article_enricher import fetch_article_facts
 from collectors.address_audit import audit_addresses
 from collectors.news_resolver import resolve_google_news_url
+from collectors.rescue_processor import rescue_sources
 
-app=FastAPI(title="Open Close Map API",version="0.9.1")
+app=FastAPI(title="Open Close Map API",version="1.0.0")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"])
 DATABASE_URL=os.getenv("DATABASE_URL","").strip()
 def db_conn():return psycopg.connect(DATABASE_URL) if DATABASE_URL else None
@@ -56,7 +57,7 @@ def init_db():
 def startup():init_db()
 
 @app.get("/")
-def root():return {"service":"open-close-map-api","status":"ok","version":"0.9.1","time":datetime.now(timezone.utc).isoformat()}
+def root():return {"service":"open-close-map-api","status":"ok","version":"1.0.0","time":datetime.now(timezone.utc).isoformat()}
 @app.get("/health")
 def health():return {"ok":True,"database_configured":bool(DATABASE_URL),"time":datetime.now(timezone.utc).isoformat()}
 
@@ -159,3 +160,14 @@ def resolve_and_backfill():
         "batch_size":5,
         **enrich_candidates(DATABASE_URL,limit=5,include_processed=True)
     }
+
+@app.post("/api/rescue-sources")
+def rescue_source_batch():
+    """
+    Google News URLを解読せず、記事タイトルと配信元から元記事を探し直す。
+    1回5件固定。
+    現在はPR TIMESを優先対応。
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True, **rescue_sources(DATABASE_URL,batch_size=5)}
