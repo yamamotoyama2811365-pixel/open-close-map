@@ -5,7 +5,8 @@ from bs4 import BeautifulSoup
 from .news_resolver import resolve_google_news_url
 from .text_rules import (
     extract_address,extract_facility_name,extract_floor,extract_postal_code,
-    detect_prefecture,detect_city,norm
+    detect_prefecture,detect_city,norm,address_matches_expected_prefecture,
+    NEGATIVE_ADDRESS_LABELS
 )
 
 HEADERS={
@@ -18,59 +19,81 @@ def _jsonld_candidates(soup):
     for tag in soup.find_all("script",attrs={"type":"application/ld+json"}):
         raw=tag.string or tag.get_text(" ",strip=True)
         if not raw:continue
-        try:
-            data=json.loads(raw)
-            out.append(data)
-        except Exception:
-            continue
+        try:out.append(json.loads(raw))
+        except Exception:continue
     return out
 
-def _walk_jsonld(obj, found):
+def _walk_jsonld(obj,found):
     if isinstance(obj,dict):
         addr=obj.get("address")
+        name=obj.get("name")
+        typ=obj.get("@type")
+
         if isinstance(addr,dict):
             pieces=[
                 addr.get("postalCode"),addr.get("addressRegion"),
                 addr.get("addressLocality"),addr.get("streetAddress")
             ]
             value=" ".join(str(x) for x in pieces if x)
-            if value:found["addresses"].append(value)
+            if value:
+                found.append({
+                    "address":value,
+                    "name":str(name) if name else None,
+                    "type":typ
+                })
         elif isinstance(addr,str):
-            found["addresses"].append(addr)
-
-        name=obj.get("name")
-        typ=obj.get("@type")
-        if name and typ in ("LocalBusiness","Store","Restaurant","Hotel","Organization","Place"):
-            found["names"].append(str(name))
+            found.append({
+                "address":addr,
+                "name":str(name) if name else None,
+                "type":typ
+            })
 
         for v in obj.values():_walk_jsonld(v,found)
 
     elif isinstance(obj,list):
         for x in obj:_walk_jsonld(x,found)
 
-def _extract_from_tables(soup):
-    pairs={}
-    labels={"所在地","住所","店舗所在地","施設所在地","名称","名 称","店舗名","施設名","ホテル名","店名"}
-
+def _table_pairs(soup):
+    pairs=[]
     for tr in soup.find_all("tr"):
         cells=tr.find_all(["th","td"])
         if len(cells)>=2:
             key=norm(cells[0].get_text(" ",strip=True)).strip("［］【】[]")
             val=norm(" ".join(c.get_text(" ",strip=True) for c in cells[1:]))
-            if key in labels and val:pairs[key]=val
+            if key and val:pairs.append((key,val))
 
     for dl in soup.find_all("dl"):
-        dts=dl.find_all("dt")
-        for dt in dts:
+        for dt in dl.find_all("dt"):
             key=norm(dt.get_text(" ",strip=True)).strip("［］【】[]")
             dd=dt.find_next_sibling("dd")
-            if key in labels and dd:
+            if dd:
                 val=norm(dd.get_text(" ",strip=True))
-                if val:pairs[key]=val
-
+                if key and val:pairs.append((key,val))
     return pairs
 
-def fetch_article_facts(url):
+def _extract_same_block(text, expected_prefecture):
+    """
+    Extract address/postal/floor from same short block.
+    """
+    lines=[norm(x) for x in text.replace('\r','\n').split('\n') if norm(x)]
+
+    for i,line in enumerate(lines):
+        window="\n".join(lines[max(0,i-1):min(len(lines),i+3)])
+        if any(k in window for k in NEGATIVE_ADDRESS_LABELS):
+            continue
+
+        if expected_prefecture and expected_prefecture in window:
+            addr=extract_address(window,expected_prefecture)
+            if addr:
+                return {
+                    "address":addr,
+                    "postal_code":extract_postal_code(window),
+                    "floor":extract_floor(window),
+                    "block":window
+                }
+    return None
+
+def fetch_article_facts(url, expected_prefecture=None, expected_store_name=None):
     result={
         "requested_url":url,
         "resolved_url":url,
@@ -82,26 +105,20 @@ def fetch_article_facts(url):
         "city":None,
         "page_title":None,
         "method":None,
+        "quality":None,
     }
 
     if not url or not url.startswith(("http://","https://")):
         return result
 
-    resolution = resolve_google_news_url(url)
+    resolution=resolve_google_news_url(url)
     if resolution.get("ok") and resolution.get("url"):
-        url = resolution["url"]
-        result["resolved_url"] = url
-        result["resolution_method"] = resolution.get("method")
-    else:
-        result["resolution_method"] = resolution.get("method")
-        result["resolution_error"] = resolution.get("error") or resolution.get("decoder_error")
+        url=resolution["url"]
+        result["resolved_url"]=url
+        result["resolution_method"]=resolution.get("method")
 
     try:
-        with httpx.Client(
-            follow_redirects=True,
-            timeout=12.0,
-            headers=HEADERS
-        ) as client:
+        with httpx.Client(follow_redirects=True,timeout=12.0,headers=HEADERS) as client:
             r=client.get(url)
             result["resolved_url"]=str(r.url)
             ctype=(r.headers.get("content-type") or "").lower()
@@ -111,66 +128,75 @@ def fetch_article_facts(url):
     except Exception:
         return result
 
-    try:
-        soup=BeautifulSoup(html,"html.parser")
-        result["page_title"]=soup.title.get_text(" ",strip=True) if soup.title else None
+    soup=BeautifulSoup(html,"html.parser")
+    result["page_title"]=soup.title.get_text(" ",strip=True) if soup.title else None
 
-        # JSON-LD
-        found={"addresses":[],"names":[]}
-        for obj in _jsonld_candidates(soup):
-            _walk_jsonld(obj,found)
-
-        for raw_addr in found["addresses"]:
-            addr=extract_address(raw_addr) or norm(raw_addr)
-            if detect_prefecture(addr):
+    # 1. structured pairs/table
+    for key,val in _table_pairs(soup):
+        if any(neg in key for neg in NEGATIVE_ADDRESS_LABELS):
+            continue
+        if key in ("店舗所在地","施設所在地","所在地","住所","会場","開催場所"):
+            addr=extract_address(f"{key}\n{val}",expected_prefecture)
+            if addr:
                 result["address"]=addr
-                result["postal_code"]=extract_postal_code(raw_addr)
-                result["facility_name"]=found["names"][0] if found["names"] else None
-                result["method"]="jsonld"
+                result["postal_code"]=extract_postal_code(val)
+                result["floor"]=extract_floor(val)
+                result["method"]="table"
+                result["quality"]="high"
                 break
 
-        # table/dl overview
-        pairs=_extract_from_tables(soup)
-        if not result["address"]:
-            for k in ["所在地","店舗所在地","施設所在地","住所"]:
-                if k in pairs:
-                    raw=pairs[k]
-                    addr=extract_address(f"［所在地］ {raw}") or raw
-                    if detect_prefecture(addr):
-                        result["address"]=addr
-                        result["postal_code"]=extract_postal_code(raw)
-                        result["method"]="table"
-                        break
+    # name from table
+    for key,val in _table_pairs(soup):
+        if key in ("店舗名","施設名","会場名","名称","名 称","ホテル名","店名"):
+            result["facility_name"]=val[:100]
+            break
 
-        if not result["facility_name"]:
-            for k in ["名称","名 称","店舗名","施設名","ホテル名","店名"]:
-                if k in pairs:
-                    result["facility_name"]=pairs[k]
-                    break
+    # 2. JSON-LD only if prefecture consistent
+    if not result["address"]:
+        candidates=[]
+        for obj in _jsonld_candidates(soup):
+            _walk_jsonld(obj,candidates)
+        for c in candidates:
+            raw=c.get("address") or ""
+            pref=detect_prefecture(raw)
+            if expected_prefecture and pref and pref!=expected_prefecture:
+                continue
+            addr=extract_address(raw,expected_prefecture)
+            if addr:
+                result["address"]=addr
+                result["postal_code"]=extract_postal_code(raw)
+                result["facility_name"]=result["facility_name"] or c.get("name")
+                result["method"]="jsonld"
+                result["quality"]="high"
+                break
 
-        # Visible text: preserve line breaks because PR TIMES overview often relies on them
-        for tag in soup(["script","style","noscript","svg"]):
-            tag.decompose()
-        text=soup.get_text("\n",strip=True)
-        text=re.sub(r'\n{3,}','\n\n',text)[:350_000]
+    # 3. visible text, but same short block only
+    for tag in soup(["script","style","noscript","svg"]):
+        tag.decompose()
+    text=soup.get_text("\n",strip=True)
+    text=re.sub(r'\n{3,}','\n\n',text)[:350_000]
 
-        if not result["address"]:
-            result["address"]=extract_address(text)
-            if result["address"]:result["method"]="visible-text"
+    if not result["address"]:
+        block=_extract_same_block(text,expected_prefecture)
+        if block:
+            result["address"]=block["address"]
+            result["postal_code"]=block["postal_code"]
+            result["floor"]=block["floor"]
+            result["method"]="visible-block"
+            result["quality"]="medium"
 
-        if not result["postal_code"]:
-            result["postal_code"]=extract_postal_code(text)
+    if not result["facility_name"]:
+        result["facility_name"]=extract_facility_name(text,result["address"])
 
-        if not result["facility_name"]:
-            result["facility_name"]=extract_facility_name(text,result["address"])
+    # final consistency check
+    if result["address"] and expected_prefecture:
+        if not address_matches_expected_prefecture(result["address"],expected_prefecture):
+            result["address"]=None
+            result["postal_code"]=None
+            result["floor"]=None
+            result["quality"]="rejected_prefecture_mismatch"
 
-        result["floor"]=extract_floor(
-            (result["address"] or "")+" "+(result["facility_name"] or "")+" "+text[:50000]
-        )
-        result["prefecture"]=detect_prefecture(result["address"] or text)
-        result["city"]=detect_city(result["address"] or text)
-
-    except Exception:
-        pass
+    result["prefecture"]=detect_prefecture(result["address"] or "")
+    result["city"]=detect_city(result["address"] or "")
 
     return result

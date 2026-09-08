@@ -10,8 +10,9 @@ from collectors.article_enricher import fetch_article_facts
 from collectors.address_audit import audit_addresses
 from collectors.news_resolver import resolve_google_news_url
 from collectors.rescue_processor import rescue_sources
+from collectors.address_quality import audit_and_clean
 
-app=FastAPI(title="Open Close Map API",version="1.0.0")
+app=FastAPI(title="Open Close Map API",version="1.1.0")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"])
 DATABASE_URL=os.getenv("DATABASE_URL","").strip()
 def db_conn():return psycopg.connect(DATABASE_URL) if DATABASE_URL else None
@@ -57,7 +58,7 @@ def init_db():
 def startup():init_db()
 
 @app.get("/")
-def root():return {"service":"open-close-map-api","status":"ok","version":"1.0.0","time":datetime.now(timezone.utc).isoformat()}
+def root():return {"service":"open-close-map-api","status":"ok","version":"1.1.0","time":datetime.now(timezone.utc).isoformat()}
 @app.get("/health")
 def health():return {"ok":True,"database_configured":bool(DATABASE_URL),"time":datetime.now(timezone.utc).isoformat()}
 
@@ -171,3 +172,21 @@ def rescue_source_batch():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True, **rescue_sources(DATABASE_URL,batch_size=5)}
+
+@app.get("/api/address-quality-audit")
+def address_quality_audit():
+    """
+    既存住所の都道府県整合性を監査。DBは変更しない。
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True, **audit_and_clean(DATABASE_URL,apply=False,limit=100)}
+
+@app.post("/api/address-quality-clean")
+def address_quality_clean():
+    """
+    明確に都道府県不一致の住所だけ削除する。
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True, **audit_and_clean(DATABASE_URL,apply=True,limit=100)}

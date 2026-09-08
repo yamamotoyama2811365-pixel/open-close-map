@@ -28,11 +28,24 @@ CATEGORY_RULES={
 "飲食店":["レストラン","食堂","飲食店"]
 }
 
+NEGATIVE_ADDRESS_LABELS=[
+    "本社所在地","本社住所","会社所在地","会社住所","運営会社","会社概要",
+    "問い合わせ先","お問い合わせ先","連絡先","本部所在地","事務局所在地"
+]
+
+POSITIVE_ADDRESS_LABELS=[
+    "店舗所在地","施設所在地","会場","開催場所","所在地","住所","アクセス"
+]
+
+POSITIVE_NAME_LABELS=[
+    "店舗名","施設名","会場名","名称","名 称","ホテル名","店名"
+]
+
 def norm(text):
     if not text:
         return ""
-    text = text.replace("\u3000"," ")
-    text = re.sub(r'[ \t]+',' ',text)
+    text=text.replace("\u3000"," ")
+    text=re.sub(r'[ \t]+',' ',text)
     return text.strip()
 
 def classify_title(title):
@@ -74,6 +87,16 @@ def clean_store_name(title):
     t=re.sub(r'(が|を|は)?\s*(新規)?(オープン|OPEN|開店|閉店|閉館|営業終了|出店).*$','',t,flags=re.I)
     return t.strip(' 「」『』【】:：')[:120] or (title or "")[:120]
 
+def extract_source_name_from_title(title):
+    if not title:return None
+    # last suffix after dash / pipe, common in Google News titles
+    m=re.search(r'\s*[-｜|]\s*([^-｜|]{2,60})\s*$',title)
+    if m:
+        s=norm(m.group(1))
+        if s and "Google News" not in s:
+            return s
+    return None
+
 def extract_postal_code(text):
     m=re.search(r'〒?\s*(\d{3})[-ー－](\d{4})',text or '')
     return f"{m.group(1)}-{m.group(2)}" if m else None
@@ -88,102 +111,136 @@ def extract_floor(text):
         if m:return re.sub(r'\s+','',m.group(1))
     return None
 
+def _label_value(text, labels):
+    if not text:return None
+    t=text.replace('\r','\n')
+    alt='|'.join(re.escape(x) for x in labels)
+    patterns=[
+        rf'[［【\[]\s*(?:{alt})\s*[］】\]]\s*[:：]?\s*([^\n\r]+)',
+        rf'(?:^|\n)\s*(?:{alt})\s*[:：]\s*([^\n\r]+)',
+        rf'(?:^|\n)\s*(?:{alt})\s+([^\n\r]+)',
+    ]
+    for p in patterns:
+        m=re.search(p,t,re.I|re.M)
+        if m:return norm(m.group(1))
+    return None
+
+def contains_negative_context(text):
+    t=text or ""
+    return any(x in t for x in NEGATIVE_ADDRESS_LABELS)
+
 def clean_address_candidate(value):
     if not value:return None
     v=norm(value)
     v=re.sub(r'^〒?\s*\d{3}[-ー－]\d{4}\s*','',v)
-    # trailing labels/noise
-    v=re.split(r'(?:TEL|電話|営業時間|アクセス|URL|公式|定休日|客室数|開業日|予約)',v,maxsplit=1)[0]
+    v=re.split(r'(?:TEL|電話|営業時間|アクセス|URL|公式|定休日|予約|問い合わせ|お問い合わせ)',v,maxsplit=1)[0]
     v=v.strip("　 ,、。;；|｜[]［］")
-    if not detect_prefecture(v):
-        return None
+    if not detect_prefecture(v):return None
     return v[:160]
 
-def extract_labeled_value(text, labels):
+def address_matches_expected_prefecture(address, expected_prefecture):
+    if not address or not expected_prefecture:
+        return True
+    return detect_prefecture(address) == expected_prefecture
+
+def extract_labeled_address_block(text):
     """
-    ［所在地］ xxx / 【所在地】xxx / 所在地：xxx / 所在地 xxx
-    などを最優先で取得。
+    Returns value + context label.
+    Avoids company/head-office blocks.
     """
-    if not text:return None
+    if not text:return (None,None)
     t=text.replace('\r','\n')
-    label_alt='|'.join(re.escape(x) for x in labels)
-    patterns=[
-        rf'[［【\[]\s*(?:{label_alt})\s*[］】\]]\s*[:：]?\s*([^\n\r]+)',
-        rf'(?:^|\n)\s*(?:{label_alt})\s*[:：]\s*([^\n\r]+)',
-        rf'(?:^|\n)\s*(?:{label_alt})\s+([^\n\r]+)',
-    ]
-    for p in patterns:
-        m=re.search(p,t,re.I|re.M)
-        if m:
-            return norm(m.group(1))
-    return None
+    lines=[norm(x) for x in t.split('\n') if norm(x)]
 
-def extract_address(text):
+    for i,line in enumerate(lines):
+        # Skip obvious negative labels/sections
+        if any(lbl in line for lbl in NEGATIVE_ADDRESS_LABELS):
+            continue
+
+        for label in POSITIVE_ADDRESS_LABELS:
+            if label in line:
+                # If same line contains value
+                after=re.split(re.escape(label),line,maxsplit=1)[-1]
+                after=after.lstrip("：: ]］】")
+                if detect_prefecture(after):
+                    return clean_address_candidate(after),label
+
+                # Try next line
+                if i+1 < len(lines):
+                    nxt=lines[i+1]
+                    if not contains_negative_context(nxt) and detect_prefecture(nxt):
+                        return clean_address_candidate(nxt),label
+    return (None,None)
+
+def extract_address(text, expected_prefecture=None):
     if not text:return None
 
-    # 1) ラベル形式を最優先
-    labeled=extract_labeled_value(
-        text,
-        ["所在地","住所","店舗所在地","施設所在地","本社所在地","開業地"]
-    )
-    addr=clean_address_candidate(labeled)
-    if addr:return addr
+    # 1) Positive labels / block
+    addr,label=extract_labeled_address_block(text)
+    if addr and address_matches_expected_prefecture(addr,expected_prefecture):
+        return addr
 
-    # 2) 本文全体から郵便番号＋住所
-    t=norm(text)
-    m=re.search(
+    # 2) Postal + address, but reject negative contexts around it
+    t=text.replace('\r','\n')
+    for m in re.finditer(
         r'〒?\s*\d{3}[-ー－]\d{4}\s*('
         + '|'.join(map(re.escape,PREFECTURES))
         + r')[一-龥ぁ-んァ-ヶー0-9０-９\-ー丁目番地号ノの\s]{3,120}',
         t
-    )
-    if m:
-        full=m.group(0)
-        full=re.sub(r'^〒?\s*\d{3}[-ー－]\d{4}\s*','',full)
+    ):
+        start=max(0,m.start()-80)
+        context=t[start:m.start()+len(m.group(0))+30]
+        if contains_negative_context(context):
+            continue
+        full=re.sub(r'^〒?\s*\d{3}[-ー－]\d{4}\s*','',m.group(0))
         full=re.split(r'(?:TEL|電話|営業時間|アクセス|URL|公式|定休日)',full,maxsplit=1)[0]
-        return clean_address_candidate(full)
+        addr=clean_address_candidate(full)
+        if addr and address_matches_expected_prefecture(addr,expected_prefecture):
+            return addr
 
-    # 3) 都道府県から始まる番地住所
-    for pref in PREFECTURES:
-        idx=t.find(pref)
-        if idx<0:continue
-        tail=t[idx:idx+180]
-        m=re.match(
-            re.escape(pref)
-            + r'[一-龥ぁ-んァ-ヶー]{1,20}(?:市|区|町|村)'
-            + r'[一-龥ぁ-んァ-ヶー0-9０-９\-ー丁目番地号ノの\s]{1,90}',
-            tail
-        )
-        if m:
-            candidate=re.split(r'(?:TEL|電話|営業時間|アクセス|URL|公式|定休日)',m.group(0),maxsplit=1)[0]
-            # 番号要素があるものを優先
-            if re.search(r'\d',candidate):
-                return clean_address_candidate(candidate)
+    # 3) Prefecture-starting numbered address
+    flat=norm(t)
+    prefs=[expected_prefecture] if expected_prefecture else PREFECTURES
+    for pref in prefs:
+        if not pref:continue
+        for m in re.finditer(re.escape(pref),flat):
+            start=max(0,m.start()-70)
+            precontext=flat[start:m.start()]
+            if contains_negative_context(precontext):
+                continue
+            tail=flat[m.start():m.start()+180]
+            mm=re.match(
+                re.escape(pref)
+                + r'[一-龥ぁ-んァ-ヶー]{1,20}(?:市|区|町|村)'
+                + r'[一-龥ぁ-んァ-ヶー0-9０-９\-ー丁目番地号ノの\s]{1,90}',
+                tail
+            )
+            if mm and re.search(r'\d',mm.group(0)):
+                candidate=re.split(r'(?:TEL|電話|営業時間|アクセス|URL|公式|定休日)',mm.group(0),maxsplit=1)[0]
+                addr=clean_address_candidate(candidate)
+                if addr and address_matches_expected_prefecture(addr,expected_prefecture):
+                    return addr
     return None
 
 def extract_facility_name(text, address=None):
     if not text:return None
 
-    # 名称ラベル最優先
-    labeled=extract_labeled_value(
-        text,
-        ["名称","名 称","店舗名","施設名","ホテル名","店名"]
-    )
+    labeled=_label_value(text,POSITIVE_NAME_LABELS)
     if labeled:
         v=re.split(r'(?:所在地|住所|TEL|電話|営業時間|開業日)',labeled,maxsplit=1)[0]
         v=norm(v).strip("、。:：")
-        if 2<=len(v)<=80:
-            return v
+        if 2<=len(v)<=80:return v
 
+    # Prefer known venue-like names
     t=norm(text)
     patterns=[
-        r'([A-Za-z0-9一-龥ぁ-んァ-ヶー・＆&\-\s]{2,50}(?:ショッピングセンター|ショッピングモール|モール|プラザ|タワー|ビル|ホテル|館|センター))'
+        r'([A-Za-z0-9一-龥ぁ-んァ-ヶー・＆&\-\s]{2,50}(?:ショッピングセンター|ショッピングモール|モール|プラザ|タワー|ビル|ホテル|館|センター|百貨店|店))'
     ]
     for p in patterns:
-        m=re.search(p,t,re.I)
-        if m:
+        for m in re.finditer(p,t,re.I):
             v=norm(m.group(1)).strip("、。:：")
             if address and v in address:continue
+            if contains_negative_context(v):continue
             if 2<=len(v)<=80:return v
     return None
 
