@@ -10,7 +10,8 @@ from .text_rules import (
     detect_prefecture, detect_city, detect_category, extract_date,
     calculate_confidence, extract_address, extract_facility_name,
     extract_floor, extract_postal_code, is_plausible_street_address,
-    extract_best_store_name_from_title
+    extract_best_store_name_from_title, normalize_hub_store_name,
+    is_good_hub_store_name, clean_hub_address, exact_event_date_from_text
 )
 
 HEADERS = {
@@ -168,38 +169,9 @@ def _published_from_text(text):
                 return None
     return None
 
-def _extract_event_date_from_detail(text,status):
-    if not text:
-        return None
-
-    if status=="opening":
-        labels=["開店日","オープン日","OPEN日","開業日","営業開始日"]
-    else:
-        labels=["閉店日","営業終了日","最終営業日"]
-
-    lines=[re.sub(r'\s+',' ',x).strip() for x in text.splitlines() if x.strip()]
-    for i,line in enumerate(lines):
-        if any(label in line for label in labels):
-            window=line
-            if i+1 < len(lines):
-                window += " " + lines[i+1]
-            d=extract_date(window)
-            if d:
-                return d
-
-    # Common sentence patterns
-    patterns = (
-        [r'20\d{2}年\d{1,2}月\d{1,2}日.{0,20}(?:オープン|OPEN|開店|開業)']
-        if status=="opening"
-        else [r'20\d{2}年\d{1,2}月\d{1,2}日.{0,20}(?:閉店|営業終了)']
-    )
-    for p in patterns:
-        m=re.search(p,text,re.I)
-        if m:
-            d=extract_date(m.group(0))
-            if d:
-                return d
-    return None
+def _extract_event_date_from_detail(text,status, page_title=None):
+    combined=(page_title or "")+"\n"+(text or "")
+    return exact_event_date_from_text(combined,status)
 
 def _external_official_candidate(soup, source_domain):
     deny=[
@@ -274,26 +246,32 @@ def parse_detail_page(url, expected_status=None, expected_prefecture=None):
 
     addr=extract_address(text,expected_prefecture)
     if addr and is_plausible_street_address(addr):
-        result["address"]=addr
-        result["postal_code"]=extract_postal_code(text)
         # only use floor if it occurs near the chosen address
         idx=text.find(addr)
         block=text[max(0,idx-120):idx+len(addr)+180] if idx>=0 else ""
-        result["floor"]=extract_floor(block)
+        floor=extract_floor(block)
+        addr=clean_hub_address(addr,floor)
+        result["address"]=addr
+        result["postal_code"]=extract_postal_code(block)
+        result["floor"]=floor
         result["quality"]="structured_fact"
     else:
         result["quality"]="no_valid_address"
 
-    name=extract_best_store_name_from_title(result["page_title"] or "")
-    if not name:
-        h1=soup.find("h1")
-        if h1:
-            name=_clean_anchor_title(h1.get_text(" ",strip=True))
+    h1_text=None
+    h1=soup.find("h1")
+    if h1:
+        h1_text=_clean_anchor_title(h1.get_text(" ",strip=True))
+
+    name=normalize_hub_store_name(
+        h1_text or result["page_title"] or "",
+        fallback=extract_best_store_name_from_title(result["page_title"] or "")
+    )
     result["facility_name"]=name or extract_facility_name(text,result["address"])
 
     result["prefecture"]=detect_prefecture(result["address"] or text)
     result["city"]=detect_city(result["address"] or text)
-    result["event_date"]=_extract_event_date_from_detail(text,expected_status)
+    result["event_date"]=_extract_event_date_from_detail(text,expected_status,result["page_title"])
 
     source_domain=(urlparse(final_url).hostname or "").lower()
     result["official_url"]=_external_official_candidate(soup,source_domain)
@@ -304,7 +282,7 @@ def _insert_candidate(cur, source, title, url, raw_card_text, published):
     if status not in ("opening","closing"):
         return False
 
-    name=extract_best_store_name_from_title(title) or _clean_anchor_title(title)
+    name=normalize_hub_store_name(title, fallback=_clean_anchor_title(title))
     if not name:
         return False
 
@@ -430,16 +408,20 @@ def enrich_hub_candidates(database_url,limit=20):
 
     scanned=enriched=address_found=official_found=store_updates=0
     results=[]
+    enriched_ids=[]
 
     with psycopg.connect(database_url) as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT
                     id,title,source_url,detected_status,prefecture,city,
-                    store_name_candidate,confidence
+                    store_name_candidate,confidence,raw_summary,source_name
                 FROM discovery_items
                 WHERE discovery_channel='openclose_hub'
                   AND processed=FALSE
+                  AND COALESCE(rescue_status,'') NOT IN(
+                      'hub_enriched','hub_needs_review','hub_promoted','excluded_event'
+                  )
                 ORDER BY
                     CASE WHEN address_candidate IS NULL THEN 0 ELSE 1 END,
                     id DESC
@@ -447,7 +429,7 @@ def enrich_hub_candidates(database_url,limit=20):
             """,(limit,))
             rows=cur.fetchall()
 
-    for did,title,url,status,pref,city,name,confidence in rows:
+    for did,title,url,status,pref,city,name,confidence,summary,source_name in rows:
         scanned+=1
         try:
             facts=parse_detail_page(
@@ -461,6 +443,13 @@ def enrich_hub_candidates(database_url,limit=20):
             postal=facts.get("postal_code")
             event=facts.get("event_date")
             official=facts.get("official_url")
+
+            clean_name=normalize_hub_store_name(
+                title,
+                fallback=facility or name
+            )
+            if clean_name:
+                name=clean_name
             pref2=pref or facts.get("prefecture")
             city2=city or facts.get("city")
 
@@ -493,7 +482,7 @@ def enrich_hub_candidates(database_url,limit=20):
                             rescue_error=NULL
                         WHERE id=%s
                     """,(
-                        addr,facility,floor,postal,event,pref2,city2,official,conf,did
+                        name,addr,facility,floor,postal,event,pref2,city2,official,conf,did
                     ))
 
                     # update existing matching store only; promotion is separate
@@ -518,10 +507,12 @@ def enrich_hub_candidates(database_url,limit=20):
                     store_updates+=cur.rowcount
 
             enriched+=1
+            enriched_ids.append(did)
             results.append({
                 "discovery_id":did,
                 "name":name,
                 "address":addr,
+                "floor":floor,
                 "official_url":official,
                 "event_date":event.isoformat() if event else None,
                 "quality":facts.get("quality"),
@@ -539,5 +530,208 @@ def enrich_hub_candidates(database_url,limit=20):
         "address_found":address_found,
         "official_found":official_found,
         "store_updates":store_updates,
+        "enriched_ids":enriched_ids,
         "results":results
     }
+
+def _hub_candidate_is_publishable(name, address, official_url, event_date, prefecture, city):
+    if not is_good_hub_store_name(name):
+        return False, "invalid_store_name"
+
+    if address and is_plausible_street_address(address):
+        return True, "valid_address"
+
+    if official_url:
+        return True, "official_url"
+
+    if event_date and prefecture and city:
+        return True, "dated_local_record"
+
+    return False, "insufficient_verified_facts"
+
+def promote_hub_candidates(database_url, discovery_ids):
+    """
+    Promote ONLY the IDs enriched by the current hub cycle.
+    Never touches Google News or unrelated unprocessed discoveries.
+    """
+    import psycopg
+
+    ids=[int(x) for x in (discovery_ids or [])]
+    if not ids:
+        return {"checked":0,"promoted":0,"updated":0,"needs_review":0,"items":[]}
+
+    checked=promoted=updated=needs_review=0
+    items=[]
+
+    with psycopg.connect(database_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    id,title,store_name_candidate,detected_status,category_candidate,
+                    prefecture,city,event_date_candidate,source_url,source_name,
+                    confidence,address_candidate,facility_name_candidate,
+                    floor_candidate,postal_code_candidate,official_url_candidate
+                FROM discovery_items
+                WHERE discovery_channel='openclose_hub'
+                  AND id = ANY(%s)
+                  AND rescue_status='hub_enriched'
+            """,(ids,))
+
+            for row in cur.fetchall():
+                (
+                    did,title,name,status,category,pref,city,event,url,source_name,
+                    confidence,address,facility,floor,postal,official
+                )=row
+                checked+=1
+
+                name=normalize_hub_store_name(title,fallback=name or facility)
+                address=clean_hub_address(address,floor)
+
+                ok,reason=_hub_candidate_is_publishable(
+                    name,address,official,event,pref,city
+                )
+
+                if not ok:
+                    needs_review+=1
+                    cur.execute("""
+                        UPDATE discovery_items
+                        SET processed=TRUE,
+                            rescue_status='hub_needs_review',
+                            rescue_error=%s
+                        WHERE id=%s
+                    """,(reason,did))
+                    items.append({
+                        "discovery_id":did,
+                        "name":name,
+                        "action":"needs_review",
+                        "reason":reason
+                    })
+                    continue
+
+                db_status="opening" if status=="opening" else "closing"
+                open_date=event if db_status=="opening" else None
+                close_date=event if db_status=="closing" else None
+
+                # Source URL is the strongest exact identity for hub articles.
+                cur.execute("SELECT id FROM stores WHERE source_url=%s LIMIT 1",(url,))
+                existing=cur.fetchone()
+
+                if not existing:
+                    cur.execute("""
+                        SELECT id FROM stores
+                        WHERE name=%s
+                          AND COALESCE(prefecture,'')=COALESCE(%s,'')
+                          AND COALESCE(city,'')=COALESCE(%s,'')
+                          AND COALESCE(open_date,DATE '1900-01-01')=COALESCE(%s,DATE '1900-01-01')
+                          AND COALESCE(close_date,DATE '1900-01-01')=COALESCE(%s,DATE '1900-01-01')
+                        LIMIT 1
+                    """,(name,pref,city,open_date,close_date))
+                    existing=cur.fetchone()
+
+                if existing:
+                    cur.execute("""
+                        UPDATE stores
+                        SET name=%s,
+                            status=%s,
+                            category=COALESCE(%s,category),
+                            prefecture=COALESCE(%s,prefecture),
+                            city=COALESCE(%s,city),
+                            address=%s,
+                            facility_name=COALESCE(%s,facility_name),
+                            floor=%s,
+                            postal_code=%s,
+                            open_date=%s,
+                            close_date=%s,
+                            source_url=%s,
+                            source_name=%s,
+                            official_url=COALESCE(%s,official_url),
+                            confidence=GREATEST(confidence,%s),
+                            last_verified_at=NOW(),
+                            updated_at=NOW()
+                        WHERE id=%s
+                    """,(
+                        name,db_status,category,pref,city,address,facility,floor,postal,
+                        open_date,close_date,url,source_name,official,confidence,existing[0]
+                    ))
+                    updated+=1
+                    store_id=existing[0]
+                    action="updated"
+                else:
+                    cur.execute("""
+                        INSERT INTO stores(
+                            name,status,category,prefecture,city,address,facility_name,
+                            floor,postal_code,open_date,close_date,source_url,source_name,
+                            official_url,confidence,last_verified_at
+                        )
+                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+                        RETURNING id
+                    """,(
+                        name,db_status,category,pref,city,address,facility,floor,postal,
+                        open_date,close_date,url,source_name,official,confidence
+                    ))
+                    store_id=cur.fetchone()[0]
+                    promoted+=1
+                    action="promoted"
+
+                cur.execute("""
+                    UPDATE discovery_items
+                    SET store_name_candidate=%s,
+                        address_candidate=%s,
+                        processed=TRUE,
+                        rescue_status='hub_promoted',
+                        rescue_error=NULL
+                    WHERE id=%s
+                """,(name,address,did))
+
+                items.append({
+                    "discovery_id":did,
+                    "store_id":store_id,
+                    "name":name,
+                    "action":action,
+                    "quality_reason":reason
+                })
+
+    return {
+        "checked":checked,
+        "promoted":promoted,
+        "updated":updated,
+        "needs_review":needs_review,
+        "items":items
+    }
+
+def reset_and_hide_hub_promotions(database_url):
+    """
+    Safety repair for v1.3.0:
+    Hide stores promoted from hub before detailed verification, then reset hub
+    discoveries so they can be re-enriched with the stricter parser.
+    """
+    import psycopg
+
+    with psycopg.connect(database_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE stores s
+                SET status='excluded',updated_at=NOW()
+                FROM discovery_items d
+                WHERE d.discovery_channel='openclose_hub'
+                  AND s.source_url=d.source_url
+                  AND COALESCE(s.status,'') <> 'excluded'
+            """)
+            hidden=cur.rowcount
+
+            cur.execute("""
+                UPDATE discovery_items
+                SET processed=FALSE,
+                    address_candidate=NULL,
+                    facility_name_candidate=NULL,
+                    floor_candidate=NULL,
+                    postal_code_candidate=NULL,
+                    event_date_candidate=NULL,
+                    official_url_candidate=NULL,
+                    rescue_status=NULL,
+                    rescue_error=NULL
+                WHERE discovery_channel='openclose_hub'
+            """)
+            reset=cur.rowcount
+
+    return {"hidden_stores":hidden,"reset_discoveries":reset}

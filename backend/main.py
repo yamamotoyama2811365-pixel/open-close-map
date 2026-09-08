@@ -15,9 +15,12 @@ from collectors.rescue_processor import rescue_sources
 from collectors.address_quality import audit_and_clean
 from collectors.non_store_quality import audit_non_store_events
 from collectors.text_rules import extract_best_store_name_from_title
-from collectors.openclose_hub import collect_openclose_hub,enrich_hub_candidates
+from collectors.openclose_hub import (
+    collect_openclose_hub,enrich_hub_candidates,
+    promote_hub_candidates,reset_and_hide_hub_promotions
+)
 
-app=FastAPI(title="Open Close Map API",version="1.3.0")
+app=FastAPI(title="Open Close Map API",version="1.3.1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -140,7 +143,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.3.0",
+        "version":"1.3.1",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -680,17 +683,16 @@ def enrich_hub():
 @app.post("/api/hub-cycle")
 def hub_cycle():
     """
-    1回で 専用サイト収集 → 20件詳細補完 → DB昇格 を行う。
+    専用サイト収集 → 20件だけ詳細補完 → その20件の合格分だけDBへ昇格。
     """
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
 
     collected=collect_openclose_hub(DATABASE_URL)
     enriched=enrich_hub_candidates(DATABASE_URL,limit=20)
-    processed=promote_candidates(
+    processed=promote_hub_candidates(
         DATABASE_URL,
-        min_confidence=78,
-        enrich_limit=0
+        enriched.get("enriched_ids",[])
     )
     return {
         "ok":True,
@@ -733,3 +735,13 @@ def source_hub_status():
             "with_official_url":r[5]
         } for r in rows]
     }
+
+@app.post("/api/hub-repair-reset")
+def hub_repair_reset():
+    """
+    v1.3.0で詳細未確認のまま昇格したHub由来店舗を一度非表示にし、
+    Hub候補を再検証可能な状態へ戻す。
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True,**reset_and_hide_hub_promotions(DATABASE_URL)}

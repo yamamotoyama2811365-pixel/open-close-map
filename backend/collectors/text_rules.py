@@ -452,3 +452,158 @@ def is_likely_aggregate_store_article(title, summary=""):
         r'\d+\s*店舗\s*同時オープン',
     ]
     return any(re.search(p, t) for p in patterns)
+
+HUB_GENERIC_NAMES = {
+    "開店・閉店ポータル","開店閉店ポータル","開店閉店.com",
+    "開店情報","閉店情報","新店情報","店舗情報","ShopShip",
+    "ショップス","ホーム","TOP","トップ"
+}
+
+def normalize_hub_store_name(title, fallback=None):
+    """
+    開店閉店系の記事タイトルから店名だけを抽出。
+    専用サイトでは引用符内の名前を広めに採用する。
+    """
+    t = norm(title or "")
+    fb = norm(fallback or "")
+
+    # Site suffix / publication date cleanup
+    t = re.sub(r'\s*[-｜|]\s*(?:開店閉店\.com|ShopShip|開店・閉店ポータル).*$','',t,flags=re.I)
+    t = re.sub(r'\s+20\d{2}[年/-]\d{1,2}[月/-]\d{1,2}日?\s*$','',t)
+    t = re.sub(r'^(?:【|〖|［)(?:開店|閉店|復活|ニューオープン|移転)(?:】|〗|］)\s*','',t)
+
+    # Quotes are highly reliable on hub sources.
+    candidates=[]
+    for pat in [
+        r'「([^」]{2,90})」',
+        r'『([^』]{2,90})』',
+        r'“([^”]{2,90})”',
+        r'"([^"]{2,90})"'
+    ]:
+        candidates.extend(re.findall(pat,t))
+
+    def clean_name(v):
+        v=norm(v).strip("「」『』【】[]（）()、。!！?？:：")
+        v=re.sub(r'^(?:新店舗|新店|閉店情報|開店情報)\s*[:：]?\s*','',v)
+        return v
+
+    scored=[]
+    for raw in candidates:
+        v=clean_name(raw)
+        if not v or v in HUB_GENERIC_NAMES:
+            continue
+        if any(x in v for x in ["出店者募集","写真・画像","初出店！","ニューオープン！"]):
+            continue
+        score=0
+        if 2 <= len(v) <= 55: score += 5
+        if any(h in v for h in STORE_NAME_HINTS): score += 3
+        if "店" in v: score += 2
+        # Prefer later quoted names when article introduces a store after context.
+        score += min(2, candidates.index(raw) if raw in candidates else 0)
+        scored.append((score,v))
+
+    if scored:
+        scored.sort(key=lambda x:x[0],reverse=True)
+        return scored[0][1]
+
+    # Common prose: "札幌市...の X が..." without quotes
+    m=re.search(
+        r'(?:市|区|町|村)の\s*([A-Za-z0-9一-龥ぁ-んァ-ヶー！!＆&・\-\s]{2,60}?)'
+        r'\s*(?:が|は)\s*20\d{2}年',
+        t
+    )
+    if m:
+        v=clean_name(m.group(1))
+        if is_good_hub_store_name(v):
+            return v
+
+    # Use already-clean fallback if it looks like an actual store name.
+    if is_good_hub_store_name(fb):
+        return fb
+
+    # Plain article title may itself just be a store name.
+    if is_good_hub_store_name(t):
+        return t
+
+    return None
+
+def is_good_hub_store_name(name):
+    if not name:
+        return False
+    n=norm(name)
+    if n in HUB_GENERIC_NAMES:
+        return False
+    if len(n) < 2 or len(n) > 80:
+        return False
+    if re.search(r'20\d{2}年\d{1,2}月\d{1,2}日',n):
+        return False
+    if any(x in n for x in [
+        "をもって閉店","オープン！","オープン予定","閉店予定",
+        "が閉店","がオープン","新店舗オープン","閉店情報 ",
+        "開店情報 ","出店者募集"
+    ]):
+        return False
+    if n.startswith(("札幌市","東京都","大阪市","京都府","北海道")) and ("の『" in n or "の「" in n):
+        return False
+    return True
+
+def clean_hub_address(address, floor=None):
+    if not address:
+        return None
+    a=address.replace("\r","\n")
+    # Remove map/navigation labels accidentally captured from article layout.
+    a=re.split(r'\n\s*(?:地図|MAP|Google\s*Map|アクセスマップ)\s*',a,maxsplit=1,flags=re.I)[0]
+    a=re.sub(r'\s+',' ',a).strip()
+    a=re.sub(r'\s+(?:地図|MAP)\s*$','',a,flags=re.I)
+
+    # If the address regex captured only the numeric portion of an adjacent floor
+    # (e.g. "...大丸札幌店 3" while floor=3F), remove that detached number.
+    if floor:
+        fm=re.match(r'(?:B)?(\d{1,2})(?:F|Ｆ|階)$',norm(floor),re.I)
+        if fm:
+            num=fm.group(1)
+            a=re.sub(rf'\s+{re.escape(num)}$','',a)
+
+    return a.strip(" ,、。")
+
+def exact_event_date_from_text(text, status):
+    """
+    Exact YYYY-MM-DD only.
+    Publication dates and month-only dates are never converted into event dates.
+    """
+    if not text:
+        return None
+
+    t=text.replace("\r","\n")
+
+    if status=="opening":
+        actions=r'(?:オープン|OPEN|開店|開業|営業開始)'
+        labels=["開店日","オープン日","OPEN日","開業日","営業開始日"]
+    else:
+        actions=r'(?:閉店|営業終了|最終営業)'
+        labels=["閉店日","営業終了日","最終営業日"]
+
+    # Explicit labeled value on the SAME line.
+    for line in [norm(x) for x in t.split("\n") if norm(x)]:
+        if any(lbl in line for lbl in labels):
+            m=re.search(r'(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日',line)
+            if m:
+                try:
+                    return date(int(m.group(1)),int(m.group(2)),int(m.group(3)))
+                except Exception:
+                    pass
+
+    # Exact date and action close to each other.
+    patterns=[
+        rf'(20\d{{2}})年\s*(\d{{1,2}})月\s*(\d{{1,2}})日.{{0,35}}{actions}',
+        rf'{actions}.{{0,35}}(20\d{{2}})年\s*(\d{{1,2}})月\s*(\d{{1,2}})日',
+    ]
+    for p in patterns:
+        m=re.search(p,t,re.I)
+        if m:
+            try:
+                return date(int(m.group(1)),int(m.group(2)),int(m.group(3)))
+            except Exception:
+                pass
+
+    return None
