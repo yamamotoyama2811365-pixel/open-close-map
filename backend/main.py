@@ -7,8 +7,9 @@ import psycopg
 from collectors.runner import run_collectors
 from collectors.processor import promote_candidates,enrich_candidates
 from collectors.article_enricher import fetch_article_facts
+from collectors.address_audit import audit_addresses
 
-app=FastAPI(title="Open Close Map API",version="0.7.0")
+app=FastAPI(title="Open Close Map API",version="0.8.0")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"])
 DATABASE_URL=os.getenv("DATABASE_URL","").strip()
 def db_conn():return psycopg.connect(DATABASE_URL) if DATABASE_URL else None
@@ -54,7 +55,7 @@ def init_db():
 def startup():init_db()
 
 @app.get("/")
-def root():return {"service":"open-close-map-api","status":"ok","version":"0.7.0","time":datetime.now(timezone.utc).isoformat()}
+def root():return {"service":"open-close-map-api","status":"ok","version":"0.8.0","time":datetime.now(timezone.utc).isoformat()}
 @app.get("/health")
 def health():return {"ok":True,"database_configured":bool(DATABASE_URL),"time":datetime.now(timezone.utc).isoformat()}
 
@@ -128,3 +129,12 @@ def process(min_confidence:int=Query(default=80,ge=60,le=98),enrich_limit:int=Qu
 def test_article(url:str):
     """住所抽出テスト用。DBには保存しない。"""
     return fetch_article_facts(url)
+@app.get("/api/address-audit")
+def address_audit(limit:int=Query(default=50,ge=1,le=100)):
+    """
+    登録店舗ごとに、住所取得できた/できなかった理由を監査する。
+    DBは更新しない。
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True, **audit_addresses(DATABASE_URL, limit=limit)}
