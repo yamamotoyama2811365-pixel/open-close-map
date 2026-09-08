@@ -1,27 +1,21 @@
-開店閉店マップ 詳細ページ v2 完全差し替え版
+周辺活力度 v1 追加版
 
-【GitHub直下】
-index.html
-detail.html
-styles.css
-app.js
-detail.js
-assets/
+今回は完全差し替えではなく、追加・差し替えが3点です。
 
-を差し替え・追加
+1) GitHub直下の detail.js を今回の detail.js に差し替え
 
-【GitHub backend】
-backend フォルダをこのZIP内の backend で丸ごと差し替え
+2) GitHub直下の styles.css の一番下に
+   STYLES_ADD.txt の内容をそのまま追加
 
-その後
-1. Commit changes
-2. Render open-close-map-api → Manual Deploy → Deploy latest commit
-3. Render open-close-map → Manual Deploy → Deploy latest commit
+3) backend/main.py の一番下に
+   BACKEND_ADD.txt の内容をそのまま追加
 
-追加機能
-- 店舗詳細ページ
-- Google Maps埋め込み
-- 同一エリア店舗
-- 周辺店舗動向
-- テナント募集情報
-- 情報元リンク
+その後:
+Commit changes
+→ Render open-close-map-api を Deploy latest commit
+→ Render open-close-map を Deploy latest commit
+
+追加されるAPI:
+GET /api/stores/{store_id}/activity-score
+
+スコアは現段階では当サイト内データのみを使用する暫定指標です。

@@ -14,15 +14,23 @@ function mapHtml(x){
   return `<iframe class="map-frame" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="${src}"></iframe>`;
 }
 
+function scoreClass(score){
+  if(score>=80) return 'score-a';
+  if(score>=65) return 'score-b';
+  if(score>=50) return 'score-c';
+  return 'score-d';
+}
+
 async function load(){
   const root=document.getElementById('detailRoot');
   if(!id){root.textContent='店舗IDが指定されていません。';return}
   try{
-    const [x, nearby, tenant, area] = await Promise.all([
+    const [x, nearby, tenant, area, activity] = await Promise.all([
       getJSON(`${API}/api/stores/${encodeURIComponent(id)}`),
       getJSON(`${API}/api/stores/${encodeURIComponent(id)}/nearby`),
       getJSON(`${API}/api/stores/${encodeURIComponent(id)}/tenant`),
-      getJSON(`${API}/api/stores/${encodeURIComponent(id)}/area-summary`)
+      getJSON(`${API}/api/stores/${encodeURIComponent(id)}/area-summary`),
+      getJSON(`${API}/api/stores/${encodeURIComponent(id)}/activity-score`)
     ]);
 
     const img=x.image_url||fallbackMap[x.category]||fallbackMap['テナント'];
@@ -52,6 +60,27 @@ async function load(){
             <div class="detail-info"><span>最終確認</span><strong>${esc(x.last_verified_at?new Date(x.last_verified_at).toLocaleString('ja-JP'):'未確認')}</strong></div>
           </div>
         </div>
+      </section>
+
+      <section class="detail-section">
+        <h2>周辺活力度</h2>
+        <div class="activity-wrap">
+          <div class="activity-score ${scoreClass(activity.score)}">
+            <span>AREA ACTIVITY</span>
+            <strong>${esc(activity.score)}</strong>
+            <small>/ 100</small>
+          </div>
+          <div class="activity-copy">
+            <h3>${esc(activity.label)}</h3>
+            <p>${esc(activity.comment)}</p>
+            <div class="activity-bars">
+              <div><span>店舗集積</span><b>${esc(activity.breakdown.store_density)}</b></div>
+              <div><span>開店動向</span><b>${esc(activity.breakdown.opening_momentum)}</b></div>
+              <div><span>入替活発度</span><b>${esc(activity.breakdown.turnover_activity)}</b></div>
+            </div>
+          </div>
+        </div>
+        <p class="activity-note">※ 現在は当サイト内の店舗動向データをもとにした参考指標です。人口・駅距離などの無料統計データは順次追加します。</p>
       </section>
 
       <section class="detail-section">
