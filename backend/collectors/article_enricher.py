@@ -190,22 +190,21 @@ def fetch_article_facts(url, expected_prefecture=None, expected_store_name=None)
 
     # final consistency check
     if result["address"] and expected_prefecture:
-        if not address_matches_expected_prefecture(result["address"],expected_prefecture):
-            result["address"]=None
-            result["postal_code"]=None
-            result["floor"]=None
-            result["quality"]="rejected_prefecture_mismatch"
+        if not address_matches_expected_prefecture(result["address"], expected_prefecture):
+            result["address"] = None
+            result["postal_code"] = None
+            result["floor"] = None
+            result["quality"] = "rejected_prefecture_mismatch"
 
+    # final street-address plausibility check
+    if result["address"] and not is_plausible_street_address(result["address"]):
+        # Keep facility name if available, but do not store a fake street address
+        result["address"] = None
+        result["postal_code"] = None
+        result["floor"] = None
+        result["quality"] = "rejected_not_street_address"
 
-# final street-address plausibility check
-if result["address"] and not is_plausible_street_address(result["address"]):
-    # Keep facility name if available, but do not store a fake street address
-    result["address"] = None
-    result["postal_code"] = None
-    result["floor"] = None
-    result["quality"] = "rejected_not_street_address"
-
-    result["prefecture"]=detect_prefecture(result["address"] or "")
-    result["city"]=detect_city(result["address"] or "")
+    result["prefecture"] = detect_prefecture(result["address"] or "")
+    result["city"] = detect_city(result["address"] or "")
 
     return result
