@@ -1,10 +1,87 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>開店閉店マップ｜全国の開店・閉店・テナント情報</title><meta name="description" content="全国の開店・閉店・テナント情報をエリア別・業種別にチェック。気になる街の新店、閉店、跡地情報をまとめて確認できます。"><link rel="stylesheet" href="styles.css"></head><body>
-<header class="site-header"><div class="brand-wrap"><div class="logo-mark">⌖</div><div><div class="brand">開店閉店マップ</div><div class="brand-sub">全国の開店・閉店・テナント情報</div></div></div><nav class="main-nav"><a href="#latest">最新情報</a><a href="#areas">エリアから探す</a><a href="#categories">業種から探す</a><a href="#about">このサイトについて</a></nav></header>
-<section class="hero"><div class="hero-inner"><div class="hero-copy"><div class="eyebrow">OPEN / CLOSE / TENANT</div><h1>街の変化を、<br>いち早く。</h1><p>全国の開店・閉店・テナント情報を、エリアとデータでわかりやすく。</p><div class="search-box"><input id="q" placeholder="店舗名・エリア・業種・駅名などで検索"><button id="search">検索</button></div><div class="quick-links"><button data-pref="北海道">札幌・北海道</button><button data-pref="東京都">東京</button><button data-pref="大阪府">大阪</button><button data-pref="愛知県">名古屋</button><button data-pref="福岡県">福岡</button></div></div><div class="hero-side"><div class="side-title">いま、街で起きていること</div><div class="side-row"><span>登録店舗情報</span><strong id="storesTotal">-</strong></div><div class="side-row"><span>更新待ち情報</span><strong id="discoveryTotal">-</strong></div><div class="side-note">開店・閉店予定、テナント募集、跡地情報などを順次掲載しています。</div></div></div></section>
-<section class="stats-wrap"><div class="stat-card green"><span>本日の開店</span><strong id="todayOpen">0</strong><small>件</small></div><div class="stat-card orange"><span>今週の開店予定</span><strong id="weekOpen">0</strong><small>件</small></div><div class="stat-card red"><span>今週の閉店予定</span><strong id="weekClose">0</strong><small>件</small></div><div class="stat-card blue"><span>テナント募集確認</span><strong id="tenant">0</strong><small>件</small></div></section>
-<main class="container"><section id="latest" class="section-card"><div class="section-head"><div><div class="section-label">LATEST</div><h2>最新の開店・閉店情報</h2><p>全国から届いた最新の店舗情報をチェック。</p></div><button id="reload" class="text-btn">最新情報を見る →</button></div><div id="grid" class="store-grid"><div class="empty">読み込み中...</div></div></section>
-<div class="two-col"><section id="areas" class="section-card"><div class="section-head compact"><div><div class="section-label">AREA</div><h2>エリアから探す</h2></div></div><div class="area-grid"><button data-pref="北海道">北海道</button><button data-pref="東京都">東京都</button><button data-pref="神奈川県">神奈川県</button><button data-pref="愛知県">愛知県</button><button data-pref="大阪府">大阪府</button><button data-pref="福岡県">福岡県</button></div></section>
-<section id="categories" class="section-card"><div class="section-head compact"><div><div class="section-label">CATEGORY</div><h2>業種から探す</h2></div></div><div class="category-grid"><button data-cat="ラーメン">ラーメン</button><button data-cat="カフェ">カフェ</button><button data-cat="居酒屋">居酒屋</button><button data-cat="焼肉">焼肉</button><button data-cat="美容">美容</button><button data-cat="コンビニ">コンビニ</button></div></section></div>
-<section class="feature-strip"><div><div class="section-label light">TENANT</div><h2>その場所に、次の物語を。</h2><p>閉店後の跡地やテナント募集情報も、店舗履歴とあわせて確認できるサイトを目指しています。</p></div><button id="tenantFilter">テナント情報を見る</button></section>
-<section id="about" class="section-card about-card"><div class="section-label">ABOUT</div><h2>開店閉店マップについて</h2><p>「近所に何ができる？」「あのお店はいつ閉店した？」「跡地には何が入る？」。そんな街の変化を、ひとつの場所で追える店舗情報データベースです。</p><p>開店・閉店予定、店舗履歴、テナント情報、周辺情報などを順次充実させていきます。</p></section></main>
-<footer><div class="brand footer-brand">開店閉店マップ</div><div>© 2026 Open Close Map</div></footer><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>開店閉店マップ｜全国の開店・閉店・テナント情報</title>
+  <meta name="description" content="全国の開店・閉店・テナント情報をエリア別・業種別にチェック。気になる街の新店、閉店、跡地情報をまとめて確認できます。">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="brand-wrap">
+    <div class="logo-mark">⌖</div>
+    <div>
+      <div class="brand">開店閉店マップ</div>
+      <div class="brand-sub">全国の開店・閉店・テナント情報</div>
+    </div>
+  </div>
+  <nav class="main-nav">
+    <a href="#latest">最新情報</a>
+    <a href="#areas">エリアから探す</a>
+    <a href="#categories">業種から探す</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-copy">
+      <div class="eyebrow">OPEN / CLOSE / TENANT</div>
+      <h1>街の変化を、<br>いち早く。</h1>
+      <p>全国の開店・閉店・テナント情報を、エリアとデータでわかりやすく。</p>
+      <div class="search-box">
+        <input id="q" placeholder="店舗名・エリア・業種・駅名などで検索">
+        <button id="search">検索</button>
+      </div>
+    </div>
+    <div class="hero-side">
+      <div class="side-title">いま、街で起きていること</div>
+      <div class="side-row"><span>登録店舗情報</span><strong id="storesTotal">-</strong></div>
+      <div class="side-row"><span>更新待ち情報</span><strong id="discoveryTotal">-</strong></div>
+    </div>
+  </div>
+</section>
+
+<section class="stats-wrap">
+  <div class="stat-card green"><span>本日の開店</span><strong id="todayOpen">0</strong><small>件</small></div>
+  <div class="stat-card orange"><span>今週の開店予定</span><strong id="weekOpen">0</strong><small>件</small></div>
+  <div class="stat-card red"><span>今週の閉店予定</span><strong id="weekClose">0</strong><small>件</small></div>
+  <div class="stat-card blue"><span>テナント募集確認</span><strong id="tenant">0</strong><small>件</small></div>
+</section>
+
+<main class="container">
+  <section id="latest" class="section-card">
+    <div class="section-head">
+      <div>
+        <div class="section-label">LATEST</div>
+        <h2>最新の開店・閉店情報</h2>
+      </div>
+    </div>
+    <div id="grid" class="store-grid"><div class="empty">読み込み中...</div></div>
+  </section>
+
+  <div class="two-col">
+    <section id="areas" class="section-card">
+      <div class="section-label">AREA</div><h2>エリアから探す</h2>
+      <div class="area-grid">
+        <button data-pref="北海道">北海道</button><button data-pref="東京都">東京都</button>
+        <button data-pref="神奈川県">神奈川県</button><button data-pref="愛知県">愛知県</button>
+        <button data-pref="大阪府">大阪府</button><button data-pref="福岡県">福岡県</button>
+      </div>
+    </section>
+
+    <section id="categories" class="section-card">
+      <div class="section-label">CATEGORY</div><h2>業種から探す</h2>
+      <div class="category-grid">
+        <button data-cat="ラーメン">ラーメン</button><button data-cat="カフェ">カフェ</button>
+        <button data-cat="居酒屋">居酒屋</button><button data-cat="焼肉">焼肉</button>
+        <button data-cat="美容">美容</button><button data-cat="コンビニ">コンビニ</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>© 2026 開店閉店マップ</footer>
+<script src="app.js"></script>
+</body>
+</html>
