@@ -10,22 +10,24 @@ async function getJSON(url){const r=await fetch(url);if(!r.ok)throw new Error(r.
 function mapHtml(x){
   const address=x.address||[x.prefecture,x.city].filter(Boolean).join(' ');
   if(!address) return '<div class="map-placeholder">住所情報が確認でき次第、地図を表示します。</div>';
-  const src='https://www.google.com/maps?q='+encodeURIComponent(address)+'&output=embed';
+  const query=[x.address,x.facility_name,x.floor].filter(Boolean).join(' ');
+  const src='https://www.google.com/maps?q='+encodeURIComponent(query)+'&output=embed';
   return `<iframe class="map-frame" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="${src}"></iframe>`;
 }
 
 function scoreClass(score){
-  if(score>=80) return 'score-a';
-  if(score>=65) return 'score-b';
-  if(score>=50) return 'score-c';
+  if(score>=80)return 'score-a';
+  if(score>=65)return 'score-b';
+  if(score>=50)return 'score-c';
   return 'score-d';
 }
 
 async function load(){
   const root=document.getElementById('detailRoot');
   if(!id){root.textContent='店舗IDが指定されていません。';return}
+
   try{
-    const [x, nearby, tenant, area, activity] = await Promise.all([
+    const [x,nearby,tenant,area,activity]=await Promise.all([
       getJSON(`${API}/api/stores/${encodeURIComponent(id)}`),
       getJSON(`${API}/api/stores/${encodeURIComponent(id)}/nearby`),
       getJSON(`${API}/api/stores/${encodeURIComponent(id)}/tenant`),
@@ -37,12 +39,24 @@ async function load(){
     document.title=`${x.name||'店舗詳細'}｜開店閉店マップ`;
 
     const nearbyHtml=(nearby.items||[]).length
-      ? `<div class="nearby-list">${nearby.items.map(n=>`<a class="nearby-item" href="detail.html?id=${n.id}"><b>${esc(n.name)}</b><span>${esc(label(n.status))} / ${esc(n.category||'業種未確認')}</span></a>`).join('')}</div>`
+      ? `<div class="nearby-list">${nearby.items.map(n=>`
+        <a class="nearby-item" href="detail.html?id=${n.id}">
+          <b>${esc(n.name)}</b>
+          <span>${esc(label(n.status))} / ${esc(n.category||'業種未確認')}</span>
+          ${n.facility_name?`<span>${esc(n.facility_name)}</span>`:''}
+        </a>`).join('')}</div>`
       : '<p>同一エリアの店舗情報はまだありません。</p>';
 
     const tenantHtml=(tenant.items||[]).length
-      ? tenant.items.map(t=>`<div class="tenant-card"><b>${esc(t.source_name||'テナント情報')}</b><div>${esc(t.status||'確認中')}</div>${t.source_url?`<a href="${esc(t.source_url)}" target="_blank" rel="noopener">募集情報を見る →</a>`:''}</div>`).join('')
+      ? tenant.items.map(t=>`
+        <div class="tenant-card">
+          <b>${esc(t.source_name||'テナント情報')}</b>
+          <div>${esc(t.status||'確認中')}</div>
+          ${t.source_url?`<a href="${esc(t.source_url)}" target="_blank" rel="noopener">募集情報を見る →</a>`:''}
+        </div>`).join('')
       : '<p>現在、確認できるテナント募集情報はありません。</p>';
+
+    const addressLine=x.address||[x.prefecture,x.city].filter(Boolean).join(' ')||'住所情報は未確認です。';
 
     root.className='';
     root.innerHTML=`
@@ -51,6 +65,7 @@ async function load(){
         <div class="detail-main">
           <span class="detail-status ${esc(x.status)}">${esc(label(x.status))}</span>
           <h1>${esc(x.name||'店舗名未確認')}</h1>
+
           <div class="detail-grid">
             <div class="detail-info"><span>開店日</span><strong>${esc(x.open_date||'未確認')}</strong></div>
             <div class="detail-info"><span>閉店日</span><strong>${esc(x.close_date||'未確認')}</strong></div>
@@ -63,12 +78,21 @@ async function load(){
       </section>
 
       <section class="detail-section">
+        <h2>所在地</h2>
+        <div class="location-box">
+          ${x.postal_code?`<div class="location-row"><span>郵便番号</span><strong>〒${esc(x.postal_code)}</strong></div>`:''}
+          <div class="location-row"><span>住所</span><strong>${esc(addressLine)}</strong></div>
+          ${x.facility_name?`<div class="location-row"><span>施設・ビル名</span><strong>${esc(x.facility_name)}</strong></div>`:''}
+          ${x.floor?`<div class="location-row"><span>階数</span><strong>${esc(x.floor)}</strong></div>`:''}
+        </div>
+        ${mapHtml(x)}
+      </section>
+
+      <section class="detail-section">
         <h2>周辺活力度</h2>
         <div class="activity-wrap">
           <div class="activity-score ${scoreClass(activity.score)}">
-            <span>AREA ACTIVITY</span>
-            <strong>${esc(activity.score)}</strong>
-            <small>/ 100</small>
+            <span>AREA ACTIVITY</span><strong>${esc(activity.score)}</strong><small>/ 100</small>
           </div>
           <div class="activity-copy">
             <h3>${esc(activity.label)}</h3>
@@ -80,13 +104,7 @@ async function load(){
             </div>
           </div>
         </div>
-        <p class="activity-note">※ 現在は当サイト内の店舗動向データをもとにした参考指標です。人口・駅距離などの無料統計データは順次追加します。</p>
-      </section>
-
-      <section class="detail-section">
-        <h2>所在地・地図</h2>
-        <p>${esc(x.address||[x.prefecture,x.city].filter(Boolean).join(' ')||'住所情報は未確認です。')}</p>
-        ${mapHtml(x)}
+        <p class="activity-note">※ 現在は当サイト内の店舗動向データをもとにした参考指標です。</p>
       </section>
 
       <section class="detail-section">
@@ -118,4 +136,5 @@ async function load(){
     console.error(e);
   }
 }
+
 load();
