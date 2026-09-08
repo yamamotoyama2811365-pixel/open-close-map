@@ -34,7 +34,7 @@ NEGATIVE_ADDRESS_LABELS=[
 ]
 
 POSITIVE_ADDRESS_LABELS=[
-    "店舗所在地","施設所在地","会場","開催場所","所在地","住所","アクセス"
+    "店舗所在地","施設所在地","会場","開催場所","所在地","住所","場所","アクセス"
 ]
 
 POSITIVE_NAME_LABELS=[
@@ -133,7 +133,7 @@ def clean_address_candidate(value):
     if not value:return None
     v=norm(value)
     v=re.sub(r'^〒?\s*\d{3}[-ー－]\d{4}\s*','',v)
-    v=re.split(r'(?:TEL|電話|営業時間|アクセス|URL|公式|定休日|予約|問い合わせ|お問い合わせ)',v,maxsplit=1)[0]
+    v=re.split(r'(?:TEL|電話|営業時間|アクセス|URL|公式|定休日|予約|問い合わせ|お問い合わせ|オープン|開店|閉店|出店|営業開始|営業終了)',v,maxsplit=1)[0]
     v=v.strip("　 ,、。;；|｜[]［］")
     if not detect_prefecture(v):return None
     return v[:160]
@@ -289,11 +289,15 @@ def is_plausible_street_address(address):
     if not re.search(r'(市|区|町|村)', a):
         return False
 
-    # 原則、番地/丁目/号のいずれかを要求
+    # 番地系の数字は必須。ただし「安岡1003」のように
+    # 丁目/番/号の文字を使わない正規住所もあるため数字だけでも許容。
     has_number = bool(re.search(r'\d', a))
-    has_address_unit = bool(re.search(r'(丁目|番地|番|号|条|線|－|-|ー)', a))
+    if not has_number:
+        return False
 
-    if not (has_number and has_address_unit):
+    # 数字が市区町村より後ろに存在すること
+    muni = re.search(r'(市|区|町|村)', a)
+    if muni and not re.search(r'\d', a[muni.end():]):
         return False
 
     # 「○○公園」など施設名だけで終わっているものを除外
@@ -352,7 +356,7 @@ def is_likely_non_store_event(title, summary=""):
 
 # Override classifier with event filtering.
 def classify_title(title):
-    if is_likely_non_store_event(title):
+    if is_likely_non_store_event(title) or is_likely_aggregate_store_article(title):
         return None,0
     if any(k in title for k in TENANT_KEYWORDS): return "tenant",65
     if any(k in title for k in CLOSE_KEYWORDS): return "closing",60
@@ -378,3 +382,73 @@ def extract_facility_name(text, address=None):
     if len(vv) < 2:
         return None
     return vv
+
+STORE_NAME_HINTS = [
+    "店","カフェ","レストラン","食堂","ホテル","ショップ","ストア","サロン",
+    "クリニック","薬局","センター","館","ミロード","モール","プラザ"
+]
+
+def extract_best_store_name_from_title(title):
+    """
+    Google News見出しから、現在の雑な candidate より信頼できる店舗名を拾う。
+    引用符内の名称を最優先。
+    """
+    if not title:
+        return None
+
+    t = clean_news_title_for_name(title)
+
+    quoted = []
+    for pat in [
+        r'「([^」]{2,100})」',
+        r'『([^』]{2,100})』',
+        r'“([^”]{2,100})”',
+        r'"([^"]{2,100})"'
+    ]:
+        quoted += re.findall(pat, t)
+
+    def qscore(v):
+        vv = norm(v)
+        s = 0
+        if any(h in vv for h in STORE_NAME_HINTS): s += 5
+        if "店" in vv: s += 4
+        if len(vv) <= 50: s += 2
+        if any(b in vv for b in ["出店者募集","初出店","新店舗","写真・画像"]): s -= 6
+        return s
+
+    if quoted:
+        quoted = [norm(x) for x in quoted if 2 <= len(norm(x)) <= 100]
+        quoted.sort(key=qscore, reverse=True)
+        if quoted and qscore(quoted[0]) >= 4:
+            return quoted[0]
+
+    # Example: スガキヤ ... 本厚木ミロードイーストにオープン
+    m = re.search(
+        r'「([^」]{2,30})」.*?([A-Za-z0-9一-龥ぁ-んァ-ヶー・\s]{2,50}(?:ミロード|モール|プラザ|センター|館|イースト|ウエスト))'
+        r'(?:\s*\d*階)?\s*に(?:オープン|開店)',
+        t
+    )
+    if m:
+        brand = norm(m.group(1))
+        place = norm(m.group(2))
+        if brand and place:
+            return f"{brand} {place}店"
+
+    return None
+
+def clean_news_title_for_name(title):
+    if not title:
+        return ""
+    t = re.sub(r'\s*[-｜|]\s*PR TIMES\s*$', '', title, flags=re.I)
+    t = re.sub(r'\s*[-｜|]\s*[^-｜|]{2,60}$', '', t)
+    return norm(t)
+
+def is_likely_aggregate_store_article(title, summary=""):
+    t = f"{title or ''} {summary or ''}"
+    patterns = [
+        r'国内\s*\d+\s*店舗.*?(?:達成|突破)',
+        r'全国\s*\d+\s*店舗.*?(?:達成|突破)',
+        r'\d+\s*店舗\s*出店達成',
+        r'\d+\s*店舗\s*同時オープン',
+    ]
+    return any(re.search(p, t) for p in patterns)

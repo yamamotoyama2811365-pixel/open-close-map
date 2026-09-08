@@ -1,4 +1,4 @@
-from .text_rules import is_likely_non_store_event
+from .text_rules import is_likely_non_store_event,is_likely_aggregate_store_article
 
 def audit_non_store_events(database_url,apply=False,limit=200):
     import psycopg
@@ -28,7 +28,7 @@ def audit_non_store_events(database_url,apply=False,limit=200):
 
             for sid,sname,sstatus,did,title,summary in rows:
                 checked+=1
-                bad=is_likely_non_store_event(title,summary or "")
+                bad=is_likely_non_store_event(title,summary or "") or is_likely_aggregate_store_article(title,summary or "")
 
                 if bad:
                     excluded+=1

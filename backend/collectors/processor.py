@@ -10,7 +10,7 @@ def _propagate_to_stores(cur, candidate):
     if not name:return 0
 
     params=[candidate.get("address"),candidate.get("facility"),candidate.get("floor"),
-            candidate.get("postal"),candidate.get("resolved_url"),
+            candidate.get("postal"),candidate.get("resolved_url"),candidate.get("official_url"),
             candidate.get("confidence"),name]
 
     extra=""
@@ -28,6 +28,7 @@ def _propagate_to_stores(cur, candidate):
             floor=COALESCE(floor,%s),
             postal_code=COALESCE(postal_code,%s),
             source_url=COALESCE(%s,source_url),
+            official_url=COALESCE(official_url,%s),
             confidence=GREATEST(confidence,%s),
             updated_at=NOW()
         WHERE name=%s {extra}
@@ -46,7 +47,8 @@ def enrich_candidates(database_url,limit=50,include_processed=True):
                 SELECT id,title,raw_summary,store_name_candidate,detected_status,
                        category_candidate,prefecture,city,event_date_candidate,
                        source_url,source_name,confidence,address_candidate,
-                       facility_name_candidate,floor_candidate,postal_code_candidate
+                       facility_name_candidate,floor_candidate,postal_code_candidate,
+                       official_url_candidate
                 FROM discovery_items
                 {where}
                 ORDER BY
@@ -59,7 +61,7 @@ def enrich_candidates(database_url,limit=50,include_processed=True):
             for row in rows:
                 (
                     did,title,summary,name,ds,cat,pref,city,event,url,sname,conf,
-                    addr,facility,floor,postal
+                    addr,facility,floor,postal,official
                 )=row
 
                 facts=fetch_article_facts(url,expected_prefecture=pref,expected_store_name=name)
@@ -95,8 +97,8 @@ def enrich_candidates(database_url,limit=50,include_processed=True):
 
                 store_updates+=_propagate_to_stores(cur,{
                     "name":name,"address":addr,"facility":facility,"floor":floor,
-                    "postal":postal,"resolved_url":resolved,"confidence":conf,
-                    "pref":pref,"city":city
+                    "postal":postal,"resolved_url":resolved,"official_url":official,
+                    "confidence":conf,"pref":pref,"city":city
                 })
 
     return {
@@ -122,7 +124,7 @@ def promote_candidates(database_url,min_confidence=80,enrich_limit=40):
                        COALESCE(resolved_source_url,source_url),
                        source_name,confidence,address_candidate,
                        facility_name_candidate,floor_candidate,postal_code_candidate,
-                       title,raw_summary
+                       official_url_candidate,title,raw_summary
                 FROM discovery_items
                 WHERE processed=FALSE
                   AND confidence >= %s
@@ -132,7 +134,7 @@ def promote_candidates(database_url,min_confidence=80,enrich_limit=40):
             """,(min_confidence,))
 
             for row in cur.fetchall():
-                did,name,ds,cat,pref,city,event,url,sname,conf,addr,facility,floor,postal,title,summary=row
+                did,name,ds,cat,pref,city,event,url,sname,conf,addr,facility,floor,postal,official,title,summary=row
                 if is_likely_non_store_event(title,summary or ""):
                     cur.execute("UPDATE discovery_items SET processed=TRUE,rescue_status='excluded_event' WHERE id=%s",(did,))
                     skipped+=1
@@ -161,10 +163,11 @@ def promote_candidates(database_url,min_confidence=80,enrich_limit=40):
                             floor=COALESCE(floor,%s),
                             postal_code=COALESCE(postal_code,%s),
                             source_url=COALESCE(%s,source_url),
+                            official_url=COALESCE(official_url,%s),
                             confidence=GREATEST(confidence,%s),
                             updated_at=NOW()
                         WHERE id=%s
-                    """,(addr,facility,floor,postal,url,conf,existing[0]))
+                    """,(addr,facility,floor,postal,url,official,conf,existing[0]))
                     cur.execute("UPDATE discovery_items SET processed=TRUE WHERE id=%s",(did,))
                     skipped+=1
                     continue
@@ -173,10 +176,10 @@ def promote_candidates(database_url,min_confidence=80,enrich_limit=40):
                     INSERT INTO stores(
                         name,status,category,prefecture,city,address,facility_name,
                         floor,postal_code,open_date,close_date,source_url,source_name,
-                        confidence,last_verified_at
+                        official_url,confidence,last_verified_at
                     )
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
-                """,(name,status,cat,pref,city,addr,facility,floor,postal,od,cd,url,sname,conf))
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+                """,(name,status,cat,pref,city,addr,facility,floor,postal,od,cd,url,sname,official,conf))
 
                 cur.execute("UPDATE discovery_items SET processed=TRUE WHERE id=%s",(did,))
                 promoted+=1

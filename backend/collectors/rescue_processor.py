@@ -3,7 +3,9 @@ from .article_enricher import fetch_article_facts
 from .text_rules import (
     calculate_confidence,
     extract_source_name_from_title,
-    is_likely_non_store_event
+    is_likely_non_store_event,
+    is_likely_aggregate_store_article,
+    extract_best_store_name_from_title
 )
 
 def rescue_sources(database_url,batch_size=5):
@@ -57,7 +59,7 @@ def rescue_sources(database_url,batch_size=5):
         }
 
         try:
-            if is_likely_non_store_event(title,summary or ""):
+            if is_likely_non_store_event(title,summary or "") or is_likely_aggregate_store_article(title,summary or ""):
                 excluded_event += 1
                 item["excluded"] = True
                 item["reason"] = "non_store_event"
@@ -78,6 +80,10 @@ def rescue_sources(database_url,batch_size=5):
                         """,(store_id,))
                 results.append(item)
                 continue
+
+            better_name = extract_best_store_name_from_title(title)
+            if better_name:
+                item["better_store_name"] = better_name
 
             real_publisher=extract_source_name_from_title(title) or source_name
             item["publisher"]=real_publisher
@@ -111,7 +117,7 @@ def rescue_sources(database_url,batch_size=5):
             facts=fetch_article_facts(
                 real_url,
                 expected_prefecture=pref,
-                expected_store_name=store_name
+                expected_store_name=better_name or store_name
             )
 
             addr=facts.get("address")
@@ -162,6 +168,18 @@ def rescue_sources(database_url,batch_size=5):
                         "success_address" if addr else "relocated_no_valid_address",
                         did
                     ))
+
+                    if better_name and better_name != store_name:
+                        cur.execute("""
+                            UPDATE stores
+                            SET name=%s,updated_at=NOW()
+                            WHERE id=%s
+                        """,(better_name,store_id))
+                        cur.execute("""
+                            UPDATE discovery_items
+                            SET store_name_candidate=%s
+                            WHERE id=%s
+                        """,(better_name,did))
 
                     if addr:
                         address_found+=1

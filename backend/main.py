@@ -14,8 +14,10 @@ from collectors.news_resolver import resolve_google_news_url
 from collectors.rescue_processor import rescue_sources
 from collectors.address_quality import audit_and_clean
 from collectors.non_store_quality import audit_non_store_events
+from collectors.text_rules import extract_best_store_name_from_title
+from collectors.openclose_hub import collect_openclose_hub,enrich_hub_candidates
 
-app=FastAPI(title="Open Close Map API",version="1.2.3")
+app=FastAPI(title="Open Close Map API",version="1.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -52,6 +54,7 @@ def init_db():
                     close_date DATE,
                     source_url TEXT,
                     source_name TEXT,
+                    official_url TEXT,
                     confidence INTEGER DEFAULT 0,
                     last_verified_at TIMESTAMPTZ,
                     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -105,6 +108,8 @@ def init_db():
                     rescue_attempted_at TIMESTAMPTZ,
                     rescue_status TEXT,
                     rescue_error TEXT,
+                    discovery_channel TEXT,
+                    official_url_candidate TEXT,
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
@@ -119,7 +124,10 @@ def init_db():
                 "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS rescue_status TEXT",
                 "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS rescue_error TEXT",
                 "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS publisher_name TEXT",
-                "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS publisher_home_url TEXT"
+                "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS publisher_home_url TEXT",
+                "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS discovery_channel TEXT",
+                "ALTER TABLE discovery_items ADD COLUMN IF NOT EXISTS official_url_candidate TEXT",
+                "ALTER TABLE stores ADD COLUMN IF NOT EXISTS official_url TEXT"
             ]:
                 cur.execute(q)
 
@@ -132,7 +140,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.2.3",
+        "version":"1.3.0",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -239,7 +247,7 @@ def stores(
                 SELECT
                     id,name,status,category,prefecture,city,address,
                     facility_name,floor,postal_code,
-                    open_date,close_date,source_url,source_name,
+                    open_date,close_date,source_url,source_name,official_url,
                     confidence,last_verified_at
                 FROM stores
                 {where}
@@ -255,8 +263,9 @@ def stores(
             "facility_name":r[7],"floor":r[8],"postal_code":r[9],
             "open_date":r[10].isoformat() if r[10] else None,
             "close_date":r[11].isoformat() if r[11] else None,
-            "source_url":r[12],"source_name":r[13],"confidence":r[14],
-            "last_verified_at":r[15].isoformat() if r[15] else None
+            "source_url":r[12],"source_name":r[13],"official_url":r[14],
+            "confidence":r[15],
+            "last_verified_at":r[16].isoformat() if r[16] else None
         } for r in rows],
         "count":len(rows)
     }
@@ -273,7 +282,7 @@ def store(store_id:int):
                 SELECT
                     id,name,status,category,prefecture,city,address,
                     facility_name,floor,postal_code,
-                    open_date,close_date,source_url,source_name,
+                    open_date,close_date,source_url,source_name,official_url,
                     confidence,last_verified_at
                 FROM stores
                 WHERE id=%s
@@ -289,8 +298,9 @@ def store(store_id:int):
         "facility_name":r[7],"floor":r[8],"postal_code":r[9],
         "open_date":r[10].isoformat() if r[10] else None,
         "close_date":r[11].isoformat() if r[11] else None,
-        "source_url":r[12],"source_name":r[13],"confidence":r[14],
-        "last_verified_at":r[15].isoformat() if r[15] else None
+        "source_url":r[12],"source_name":r[13],"official_url":r[14],
+        "confidence":r[15],
+        "last_verified_at":r[16].isoformat() if r[16] else None
     }
 
 # ---- Restored detail-page APIs ----
@@ -581,3 +591,145 @@ def non_store_clean():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**audit_non_store_events(DATABASE_URL,apply=True,limit=200)}
+
+@app.post("/api/rescue-retry")
+def rescue_retry():
+    """
+    新しい救済ロジックを試せるよう、失敗/未対応/住所未取得を再キュー化。
+    excluded_event は戻さない。
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+
+    conn=db_conn()
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE discovery_items
+                SET rescue_attempted_at=NULL,
+                    rescue_status=NULL,
+                    rescue_error=NULL
+                WHERE rescue_status IN(
+                    'unsupported_publisher',
+                    'relocation_failed',
+                    'error',
+                    'relocated_no_valid_address'
+                )
+            """)
+            reset=cur.rowcount
+
+    return {"ok":True,"reset":reset}
+
+@app.get("/api/name-quality-audit")
+def name_quality_audit(limit:int=Query(default=100,ge=1,le=300)):
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+
+    conn=db_conn()
+    items=[]
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT s.id,s.name,d.title
+                FROM stores s
+                JOIN LATERAL(
+                    SELECT title
+                    FROM discovery_items d
+                    WHERE d.store_name_candidate=s.name
+                    ORDER BY d.id DESC
+                    LIMIT 1
+                ) d ON TRUE
+                WHERE COALESCE(s.status,'') <> 'excluded'
+                ORDER BY s.id DESC
+                LIMIT %s
+            """,(limit,))
+            rows=cur.fetchall()
+
+    for sid,current,title in rows:
+        better=extract_best_store_name_from_title(title)
+        if better and better != current:
+            items.append({
+                "store_id":sid,
+                "current_name":current,
+                "suggested_name":better,
+                "title":title
+            })
+
+    return {"ok":True,"count":len(items),"items":items}
+
+@app.post("/api/collect-hub")
+def collect_hub():
+    """
+    開店閉店系の専用サイトだけを収集。
+    Google Newsは使わない。
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True,**collect_openclose_hub(DATABASE_URL)}
+
+@app.post("/api/enrich-hub")
+def enrich_hub():
+    """
+    開店閉店系サイトの個別記事から、
+    住所・正式店名・開閉店日・公式URL候補を20件固定で補完。
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True,**enrich_hub_candidates(DATABASE_URL,limit=20)}
+
+@app.post("/api/hub-cycle")
+def hub_cycle():
+    """
+    1回で 専用サイト収集 → 20件詳細補完 → DB昇格 を行う。
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+
+    collected=collect_openclose_hub(DATABASE_URL)
+    enriched=enrich_hub_candidates(DATABASE_URL,limit=20)
+    processed=promote_candidates(
+        DATABASE_URL,
+        min_confidence=78,
+        enrich_limit=0
+    )
+    return {
+        "ok":True,
+        "collected":collected,
+        "enriched":enriched,
+        "processed":processed
+    }
+
+@app.get("/api/source-hub-status")
+def source_hub_status():
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+
+    conn=db_conn()
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    source_name,
+                    detected_status,
+                    COUNT(*),
+                    COUNT(*) FILTER(WHERE processed=FALSE),
+                    COUNT(*) FILTER(WHERE address_candidate IS NOT NULL),
+                    COUNT(*) FILTER(WHERE official_url_candidate IS NOT NULL)
+                FROM discovery_items
+                WHERE discovery_channel='openclose_hub'
+                GROUP BY source_name,detected_status
+                ORDER BY source_name,detected_status
+            """)
+            rows=cur.fetchall()
+
+    return {
+        "ok":True,
+        "items":[{
+            "source_name":r[0],
+            "status":r[1],
+            "total":r[2],
+            "unprocessed":r[3],
+            "with_address":r[4],
+            "with_official_url":r[5]
+        } for r in rows]
+    }

@@ -6,7 +6,7 @@ from .news_resolver import resolve_google_news_url
 from .text_rules import (
     extract_address,extract_facility_name,extract_floor,extract_postal_code,
     detect_prefecture,detect_city,norm,address_matches_expected_prefecture,
-    NEGATIVE_ADDRESS_LABELS,is_plausible_street_address
+    NEGATIVE_ADDRESS_LABELS,is_plausible_street_address,extract_best_store_name_from_title
 )
 
 HEADERS={
@@ -186,7 +186,12 @@ def fetch_article_facts(url, expected_prefecture=None, expected_store_name=None)
             result["quality"]="medium"
 
     if not result["facility_name"]:
-        result["facility_name"]=extract_facility_name(text,result["address"])
+        # Page title often contains the proper store name more reliably than body fragments.
+        from_title = extract_best_store_name_from_title(result.get("page_title") or "")
+        if from_title:
+            result["facility_name"] = from_title
+        else:
+            result["facility_name"]=extract_facility_name(text,result["address"])
 
     # final consistency check
     if result["address"] and expected_prefecture:

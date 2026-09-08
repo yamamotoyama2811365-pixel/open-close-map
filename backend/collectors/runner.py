@@ -1,6 +1,7 @@
 import hashlib, feedparser
 from datetime import datetime, timezone
 from .sources import RSS_SOURCES
+from .openclose_hub import collect_openclose_hub
 from .text_rules import (
     classify_title,detect_prefecture,detect_city,detect_category,extract_date,
     clean_store_name,calculate_confidence,extract_address,extract_facility_name,
@@ -12,6 +13,10 @@ def fingerprint(title,url):
 
 def run_collectors(database_url):
     import psycopg
+
+    # Dedicated open/close sites are now the primary discovery layer.
+    hub = collect_openclose_hub(database_url)
+
     fetched=inserted=duplicates=0
 
     with psycopg.connect(database_url) as conn:
@@ -94,4 +99,12 @@ def run_collectors(database_url):
                     if cur.fetchone()[0]:inserted+=1
                     else:duplicates+=1
 
-    return {"fetched":fetched,"inserted":inserted,"duplicates":duplicates,"sources":len(RSS_SOURCES)}
+    return {
+        "hub":hub,
+        "google_news":{
+            "fetched":fetched,
+            "inserted":inserted,
+            "duplicates":duplicates,
+            "sources":len(RSS_SOURCES)
+        }
+    }
