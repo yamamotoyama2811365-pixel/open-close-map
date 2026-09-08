@@ -1,4 +1,4 @@
-GitHubリポジトリ直下の index.html / styles.css / app.js を、この3ファイルで丸ごと差し替えます。
-Commit changes → Renderの open-close-map（Static Site）→ Manual Deploy → Deploy latest commit。
-公開URL: https://open-close-map.onrender.com
-API: https://open-close-map-api.onrender.com
+GitHub直下の index.html / styles.css / app.js を差し替え、assets フォルダもアップロードしてください。
+「自動収集」「AI」など運営方式の表現はトップページから削除済みです。
+業種別の標準画像を店舗カードに表示します。
+Commit changes → Render Static Site open-close-map → Manual Deploy → Deploy latest commit。
