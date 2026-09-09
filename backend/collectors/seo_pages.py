@@ -420,9 +420,12 @@ def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40
 </div>"""
     return page_shell(origin,title,desc,canonical_path,body,breadcrumb_json(origin,crumbs),noindex=(total==0))
 
-def render_category(database_url, origin, category, page=1, per_page=40):
+def render_category(database_url, origin, category, page=1, per_page=40, status='all'):
     category = (category or "").strip()
     page = max(1,int(page))
+    status = (status or "all").strip().lower()
+    if status not in ("all","opening","closing"):
+        status = "all"
     offset = (page-1)*per_page
 
     with _connect(database_url) as conn:
@@ -436,11 +439,26 @@ def render_category(database_url, origin, category, page=1, per_page=40):
                 WHERE COALESCE(status,'') <> 'excluded'
                   AND COALESCE(category,'業種未分類')=%s
             """,(category,))
-            total,opens,closes = cur.fetchone()
+            all_total,opens,closes = cur.fetchone()
+
+            status_sql=""
+            if status=="opening":
+                status_sql=" AND status IN('open','opening')"
+            elif status=="closing":
+                status_sql=" AND status IN('closed','closing')"
+
+            cur.execute(
+                "SELECT COUNT(*) FROM stores "
+                "WHERE COALESCE(status,'') <> 'excluded' "
+                "AND COALESCE(category,'業種未分類')=%s" + status_sql,
+                (category,)
+            )
+            total=cur.fetchone()[0]
 
             cur.execute(STORE_SELECT + """
                 WHERE COALESCE(status,'') <> 'excluded'
                   AND COALESCE(category,'業種未分類')=%s
+            """ + status_sql + """
                 ORDER BY COALESCE(open_date,close_date,created_at::date) DESC NULLS LAST,id DESC
                 LIMIT %s OFFSET %s
             """,(category,per_page,offset))
@@ -460,9 +478,20 @@ def render_category(database_url, origin, category, page=1, per_page=40):
 
     canonical_path = f"/category/{qpath(category)}"
     title = f"{category}の開店・閉店情報｜全国の新店・閉店一覧｜{SITE_NAME}"
+
+    if status=="opening":
+        title=f"{category}の開店情報｜全国の新店一覧｜{SITE_NAME}"
+    elif status=="closing":
+        title=f"{category}の閉店情報｜全国の閉店一覧｜{SITE_NAME}"
+
+    query_parts=[]
+    if status!="all":
+        query_parts.append(f"status={status}")
     if page > 1:
         title += f"（{page}ページ）"
-        canonical_path += f"?page={page}"
+        query_parts.append(f"page={page}")
+    if query_parts:
+        canonical_path += "?" + "&".join(query_parts)
     desc = f"全国の「{category}」に関する開店・閉店情報。新規オープン、開店予定、閉店予定、閉店店舗をエリア別に確認できます。"
 
     facets = "".join(
@@ -470,10 +499,20 @@ def render_category(database_url, origin, category, page=1, per_page=40):
         for pref,count in prefs if pref
     )
     prev_next=[]
+    cat_base=f"/category/{qpath(category)}"
+
+    def cat_page_href(target_page):
+        qs=[]
+        if status!="all":
+            qs.append(f"status={status}")
+        if target_page>1:
+            qs.append(f"page={target_page}")
+        return cat_base + (("?"+"&".join(qs)) if qs else "")
+
     if page>1:
-        prev_next.append(f'<a href="/category/{qpath(category)}' + (f'?page={page-1}' if page-1>1 else '') + '">‹ 前へ</a>')
+        prev_next.append(f'<a href="{cat_page_href(page-1)}">‹ 前へ</a>')
     if offset+len(rows)<total:
-        prev_next.append(f'<a href="/category/{qpath(category)}?page={page+1}">次へ ›</a>')
+        prev_next.append(f'<a href="{cat_page_href(page+1)}">次へ ›</a>')
 
     body=f"""
 <section class="hero">
@@ -482,7 +521,7 @@ def render_category(database_url, origin, category, page=1, per_page=40):
     <h1>{esc(category)}の開店・閉店情報</h1>
     <p>全国の{esc(category)}に関する新規オープン、開店予定、閉店予定、閉店店舗を一覧で確認できます。</p>
     <div class="stats">
-      <div class="stat"><strong>{total}</strong><span>掲載店舗情報</span></div>
+      <div class="stat"><strong>{all_total}</strong><span>掲載店舗情報</span></div>
       <div class="stat"><strong>{opens}</strong><span>開店・開店予定</span></div>
       <div class="stat"><strong>{closes}</strong><span>閉店・閉店予定</span></div>
     </div>
@@ -492,9 +531,20 @@ def render_category(database_url, origin, category, page=1, per_page=40):
   <main>
     <section class="panel">
       <div class="section-head">
-        <div><h2>最新の{esc(category)}情報</h2><p>全国の店舗動向</p></div>
+        <div><h2>{
+          "最新の"+esc(category)+"開店情報" if status=="opening"
+          else "最新の"+esc(category)+"閉店情報" if status=="closing"
+          else "最新の"+esc(category)+"情報"
+        }</h2><p>全国の店舗動向</p></div>
         <p>{total}件中 {offset+1 if total else 0}〜{min(offset+len(rows),total)}件</p>
       </div>
+
+      <div class="status-tabs" role="tablist" aria-label="開店・閉店の切り替え">
+        <a class="status-tab {'active' if status=='all' else ''}" href="{cat_base}">すべて</a>
+        <a class="status-tab opening {'active' if status=='opening' else ''}" href="{cat_base}?status=opening">開店</a>
+        <a class="status-tab closing {'active' if status=='closing' else ''}" href="{cat_base}?status=closing">閉店</a>
+      </div>
+
       {store_cards(rows)}
       <div class="pagination">{''.join(prev_next)}</div>
     </section>

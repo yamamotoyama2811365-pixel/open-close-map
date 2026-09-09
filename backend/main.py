@@ -25,8 +25,11 @@ from collectors.backfill import collect_backfill_step,get_backfill_status
 from collectors.seo_pages import (
     render_area,render_category,render_store,sitemap_xml,robots_txt
 )
+from collectors.category_manager import (
+    backfill_store_categories,category_stats
+)
 
-app=FastAPI(title="Open Close Map API",version="1.5.1")
+app=FastAPI(title="Open Close Map API",version="1.6.0")
 
 FRONTEND_ORIGIN=os.getenv(
     "FRONTEND_ORIGIN",
@@ -202,7 +205,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.5.1",
+        "version":"1.6.0",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -540,6 +543,13 @@ def activity_score(store_id:int):
 
 # ---- Collection / enrichment ----
 
+@app.get("/api/categories")
+def public_categories():
+    if not DATABASE_URL:
+        return {"items":[]}
+    return category_stats(DATABASE_URL)
+
+
 # ---- Public SEO HTML pages ----
 
 @app.get("/seo/area/{prefecture}",response_class=HTMLResponse)
@@ -574,10 +584,19 @@ def seo_area_city(
     )
 
 @app.get("/seo/category/{category}",response_class=HTMLResponse)
-def seo_category(category:str,page:int=Query(default=1,ge=1,le=1000)):
+def seo_category(
+    category:str,
+    page:int=Query(default=1,ge=1,le=1000),
+    status:str=Query(default="all")
+):
     if not DATABASE_URL:
         raise HTTPException(503,"Database unavailable")
-    return HTMLResponse(render_category(DATABASE_URL,PUBLIC_SITE_ORIGIN,category,page=page))
+    return HTMLResponse(
+        render_category(
+            DATABASE_URL,PUBLIC_SITE_ORIGIN,category,
+            page=page,status=status
+        )
+    )
 
 @app.get("/seo/store/{store_id}",response_class=HTMLResponse)
 def seo_store(store_id:int):
@@ -597,6 +616,16 @@ def seo_sitemap():
 @app.get("/seo/robots.txt",response_class=PlainTextResponse)
 def seo_robots():
     return PlainTextResponse(robots_txt(PUBLIC_SITE_ORIGIN))
+
+
+@app.post("/api/category-backfill",dependencies=[Depends(require_admin)])
+def category_backfill(limit:int=Query(default=200,ge=1,le=1000)):
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {
+        "ok":True,
+        **backfill_store_categories(DATABASE_URL,limit=limit)
+    }
 
 
 @app.post("/api/collect",dependencies=[Depends(require_admin)])
@@ -814,12 +843,17 @@ def hub_cycle():
         DATABASE_URL,
         enriched.get("enriched_ids",[])
     )
+    category_repair=backfill_store_categories(
+        DATABASE_URL,
+        limit=100
+    )
     return {
         "ok":True,
         "collected":collected,
         "backfill":backfill,
         "enriched":enriched,
-        "processed":processed
+        "processed":processed,
+        "category_repair":category_repair
     }
 
 @app.get("/api/source-hub-status",dependencies=[Depends(require_admin)])

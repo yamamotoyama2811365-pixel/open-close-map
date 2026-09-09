@@ -218,6 +218,7 @@ def parse_detail_page(url, expected_status=None, expected_prefecture=None):
         "city":None,
         "event_date":None,
         "official_url":None,
+        "category":None,
         "page_title":None,
         "quality":None,
     }
@@ -273,6 +274,16 @@ def parse_detail_page(url, expected_status=None, expected_prefecture=None):
     result["city"]=detect_city(result["address"] or text)
     result["event_date"]=_extract_event_date_from_detail(text,expected_status,result["page_title"])
 
+    # Category: store/facility name first, then article title/body.
+    result["category"]=detect_category(
+        "\n".join([
+            result["facility_name"] or "",
+            result["page_title"] or "",
+            text[:25000]
+        ]),
+        store_name=result["facility_name"]
+    )
+
     source_domain=(urlparse(final_url).hostname or "").lower()
     result["official_url"]=_external_official_candidate(soup,source_domain)
     return result
@@ -289,7 +300,7 @@ def _insert_candidate(cur, source, title, url, raw_card_text, published, discove
     text=raw_card_text+"\n"+title
     pref=detect_prefecture(text)
     city=detect_city(text)
-    cat=detect_category(text)
+    cat=detect_category(text,store_name=name)
 
     # Listing date is publication date, not necessarily opening/closing date.
     event=None
@@ -445,6 +456,7 @@ def enrich_hub_candidates(database_url,limit=20):
             postal=facts.get("postal_code")
             event=facts.get("event_date")
             official=facts.get("official_url")
+            detail_category=facts.get("category")
 
             clean_name=normalize_hub_store_name(
                 title,
@@ -460,8 +472,13 @@ def enrich_hub_candidates(database_url,limit=20):
             if official:
                 parsed_official_found+=1
 
+            category2=detail_category or detect_category(
+                "\n".join([name or "",title or "",summary or ""]),
+                store_name=name
+            )
+
             new_conf=calculate_confidence(
-                title,"",status,pref2,city2,event,None,addr,facility
+                title,"",status,pref2,city2,event,category2,addr,facility
             )
             conf=max(int(confidence or 0),int(new_conf or 0))
             if official:
@@ -480,12 +497,13 @@ def enrich_hub_candidates(database_url,limit=20):
                             prefecture=COALESCE(prefecture,%s::text),
                             city=COALESCE(city,%s::text),
                             official_url_candidate=COALESCE(%s::text,official_url_candidate),
+                            category_candidate=COALESCE(%s::text,category_candidate),
                             confidence=GREATEST(confidence,%s),
                             rescue_status='hub_enriched',
                             rescue_error=NULL
                         WHERE id=%s
                     """,(
-                        name,addr,facility,floor,postal,event,pref2,city2,official,conf,did
+                        name,addr,facility,floor,postal,event,pref2,city2,official,category2,conf,did
                     ))
 
                     if addr:
@@ -494,7 +512,10 @@ def enrich_hub_candidates(database_url,limit=20):
                         official_found+=1
 
                     # update existing matching store only; promotion is separate
-                    params=[addr,facility,floor,postal,official,conf,name]
+                    params=[
+                        addr,facility,floor,postal,official,
+                        category2,category2,conf,name
+                    ]
                     extra=""
                     if pref2:
                         extra+=" AND COALESCE(prefecture,'')=COALESCE(%s,'')"
@@ -507,6 +528,13 @@ def enrich_hub_candidates(database_url,limit=20):
                             floor=COALESCE(floor,%s::text),
                             postal_code=COALESCE(postal_code,%s::text),
                             official_url=COALESCE(official_url,%s::text),
+                            category=CASE
+                                WHEN %s::text IS NULL THEN category
+                                WHEN category IS NULL OR category IN(
+                                    '未分類','業種未分類','小売','飲食店'
+                                ) THEN %s::text
+                                ELSE category
+                            END,
                             confidence=GREATEST(confidence,%s),
                             updated_at=NOW()
                         WHERE name=%s
