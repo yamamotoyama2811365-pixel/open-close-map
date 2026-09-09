@@ -19,8 +19,9 @@ from collectors.openclose_hub import (
     collect_openclose_hub,enrich_hub_candidates,
     promote_hub_candidates,reset_and_hide_hub_promotions
 )
+from collectors.backfill import collect_backfill_step,get_backfill_status
 
-app=FastAPI(title="Open Close Map API",version="1.3.2")
+app=FastAPI(title="Open Close Map API",version="1.4.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -87,6 +88,20 @@ def init_db():
             """)
 
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS source_backfill_state(
+                    source_key TEXT PRIMARY KEY,
+                    next_page INTEGER NOT NULL DEFAULT 4,
+                    last_page INTEGER,
+                    completed BOOLEAN NOT NULL DEFAULT FALSE,
+                    last_run_at TIMESTAMPTZ,
+                    pages_fetched BIGINT NOT NULL DEFAULT 0,
+                    items_inserted BIGINT NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS discovery_items(
                     id BIGSERIAL PRIMARY KEY,
                     fingerprint TEXT UNIQUE NOT NULL,
@@ -143,7 +158,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.3.2",
+        "version":"1.4.0",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -689,6 +704,7 @@ def hub_cycle():
         return {"ok":False,"error":"DATABASE_URL is not configured"}
 
     collected=collect_openclose_hub(DATABASE_URL)
+    backfill=collect_backfill_step(DATABASE_URL)
     enriched=enrich_hub_candidates(DATABASE_URL,limit=20)
     processed=promote_hub_candidates(
         DATABASE_URL,
@@ -697,6 +713,7 @@ def hub_cycle():
     return {
         "ok":True,
         "collected":collected,
+        "backfill":backfill,
         "enriched":enriched,
         "processed":processed
     }
@@ -713,14 +730,15 @@ def source_hub_status():
                 SELECT
                     source_name,
                     detected_status,
+                    discovery_channel,
                     COUNT(*),
                     COUNT(*) FILTER(WHERE processed=FALSE),
                     COUNT(*) FILTER(WHERE address_candidate IS NOT NULL),
                     COUNT(*) FILTER(WHERE official_url_candidate IS NOT NULL)
                 FROM discovery_items
-                WHERE discovery_channel='openclose_hub'
-                GROUP BY source_name,detected_status
-                ORDER BY source_name,detected_status
+                WHERE discovery_channel IN('openclose_hub','openclose_hub_backfill')
+                GROUP BY source_name,detected_status,discovery_channel
+                ORDER BY source_name,detected_status,discovery_channel
             """)
             rows=cur.fetchall()
 
@@ -729,10 +747,11 @@ def source_hub_status():
         "items":[{
             "source_name":r[0],
             "status":r[1],
-            "total":r[2],
-            "unprocessed":r[3],
-            "with_address":r[4],
-            "with_official_url":r[5]
+            "channel":r[2],
+            "total":r[3],
+            "unprocessed":r[4],
+            "with_address":r[5],
+            "with_official_url":r[6]
         } for r in rows]
     }
 
@@ -745,3 +764,22 @@ def hub_repair_reset():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**reset_and_hide_hub_promotions(DATABASE_URL)}
+
+@app.post("/api/backfill-step")
+def backfill_step():
+    """
+    開店閉店.comの過去ページを1回につき1ページだけ遡る。
+    opening / closing は last_run_at の古い方を選ぶので交互に進む。
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True,**collect_backfill_step(DATABASE_URL)}
+
+@app.get("/api/backfill-status")
+def backfill_status():
+    """
+    開店/閉店それぞれ、今どのページまで遡ったか確認。
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True,**get_backfill_status(DATABASE_URL)}

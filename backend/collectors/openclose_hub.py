@@ -277,7 +277,7 @@ def parse_detail_page(url, expected_status=None, expected_prefecture=None):
     result["official_url"]=_external_official_candidate(soup,source_domain)
     return result
 
-def _insert_candidate(cur, source, title, url, raw_card_text, published):
+def _insert_candidate(cur, source, title, url, raw_card_text, published, discovery_channel='openclose_hub'):
     status=_status_from_text(raw_card_text,source.get("status"))
     if status not in ("opening","closing"):
         return False
@@ -319,7 +319,7 @@ def _insert_candidate(cur, source, title, url, raw_card_text, published):
     """,(
         fingerprint(title,url),title,source["name"],url,published,status,pref,city,conf,
         raw_card_text[:1800],name,event,cat,source["name"],source["urls"][0],
-        "openclose_hub"
+        discovery_channel
     ))
     return bool(cur.fetchone()[0])
 
@@ -418,12 +418,13 @@ def enrich_hub_candidates(database_url,limit=20):
                     id,title,source_url,detected_status,prefecture,city,
                     store_name_candidate,confidence,raw_summary,source_name
                 FROM discovery_items
-                WHERE discovery_channel='openclose_hub'
+                WHERE discovery_channel IN('openclose_hub','openclose_hub_backfill')
                   AND processed=FALSE
                   AND COALESCE(rescue_status,'') NOT IN(
                       'hub_enriched','hub_needs_review','hub_promoted','excluded_event'
                   )
                 ORDER BY
+                    CASE WHEN discovery_channel='openclose_hub' THEN 0 ELSE 1 END,
                     CASE WHEN address_candidate IS NULL THEN 0 ELSE 1 END,
                     id DESC
                 LIMIT %s
@@ -581,7 +582,7 @@ def promote_hub_candidates(database_url, discovery_ids):
                     confidence,address_candidate,facility_name_candidate,
                     floor_candidate,postal_code_candidate,official_url_candidate
                 FROM discovery_items
-                WHERE discovery_channel='openclose_hub'
+                WHERE discovery_channel IN('openclose_hub','openclose_hub_backfill')
                   AND id = ANY(%s)
                   AND rescue_status='hub_enriched'
             """,(ids,))
@@ -722,7 +723,7 @@ def reset_and_hide_hub_promotions(database_url):
                 UPDATE stores s
                 SET status='excluded',updated_at=NOW()
                 FROM discovery_items d
-                WHERE d.discovery_channel='openclose_hub'
+                WHERE d.discovery_channel IN('openclose_hub','openclose_hub_backfill')
                   AND s.source_url=d.source_url
                   AND COALESCE(s.status,'') <> 'excluded'
             """)
@@ -739,7 +740,7 @@ def reset_and_hide_hub_promotions(database_url):
                     official_url_candidate=NULL,
                     rescue_status=NULL,
                     rescue_error=NULL
-                WHERE discovery_channel='openclose_hub'
+                WHERE discovery_channel IN('openclose_hub','openclose_hub_backfill')
             """)
             reset=cur.rowcount
 
