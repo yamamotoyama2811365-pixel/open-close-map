@@ -178,9 +178,13 @@ function bindCategoryButtons(){
 async function loadCategories(){
   try{
     const d=await getJSON(API+'/api/categories');
+    const excluded=new Set([
+      '業種未分類','未分類','小売','飲食店'
+    ]);
+
     const items=(d.items||[])
-      .filter(x=>x.category&&x.category!=='業種未分類')
-      .slice(0,14);
+      .filter(x=>x.category&&!excluded.has(x.category))
+      .slice(0,6);
 
     if(items.length){
       $('categoryGrid').innerHTML=items.map(x=>
