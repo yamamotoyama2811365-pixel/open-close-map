@@ -16,6 +16,7 @@
       margin-bottom:20px;
     }
     .latest-head h2{margin:0}
+
     .status-tabs{
       display:flex;
       gap:8px;
@@ -46,6 +47,61 @@
     .status-tab.active.opening{background:#16825d}
     .status-tab.active.closing{background:#c34a4a}
 
+    /* 上部の数字は補助情報としてコンパクト表示 */
+    .compact-stats{
+      max-width:1180px;
+      margin:14px auto 0;
+      padding:0 20px;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .compact-stat{
+      display:flex;
+      align-items:baseline;
+      gap:6px;
+      padding:8px 12px;
+      background:#fff;
+      border:1px solid #e7ebef;
+      border-radius:10px;
+      font-size:12px;
+      color:#667085;
+    }
+    .compact-stat strong{
+      font-size:15px;
+      color:#17263a;
+    }
+    .compact-stat small{
+      font-size:11px;
+      color:#98a2b3;
+    }
+
+    /* 探す導線をトップで最優先 */
+    .finder-wrap{
+      max-width:1180px;
+      margin:24px auto 0;
+      padding:0 20px;
+    }
+    .finder-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:18px;
+    }
+    .finder-card{
+      background:#fff;
+      border:1px solid #e7ebef;
+      border-radius:18px;
+      padding:24px;
+      box-shadow:0 8px 24px rgba(16,24,40,.04);
+    }
+    .finder-card h2{
+      margin:2px 0 18px;
+      font-size:22px;
+    }
+
+    @media(max-width:800px){
+      .finder-grid{grid-template-columns:1fr}
+    }
     @media(max-width:700px){
       .latest-head{display:block}
       .status-tabs{
@@ -53,6 +109,13 @@
         width:100%;
       }
       .status-tab{flex:1}
+      .compact-stats{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+      }
+      .compact-stat{
+        justify-content:space-between;
+      }
     }
   </style>
 </head>
@@ -60,9 +123,16 @@
 <header class="site-header">
   <div class="brand-wrap">
     <div class="logo-mark">⌖</div>
-    <div><div class="brand">開店閉店マップ</div><div class="brand-sub">全国の開店・閉店・テナント情報</div></div>
+    <div>
+      <div class="brand">開店閉店マップ</div>
+      <div class="brand-sub">全国の開店・閉店・テナント情報</div>
+    </div>
   </div>
-  <nav class="main-nav"><a href="#latest">最新情報</a><a href="#areas">エリアから探す</a><a href="#categories">業種から探す</a></nav>
+  <nav class="main-nav">
+    <a href="#areas">エリアから探す</a>
+    <a href="#categories">業種から探す</a>
+    <a href="#latest">最新情報</a>
+  </nav>
 </header>
 
 <section class="hero">
@@ -71,8 +141,12 @@
       <div class="eyebrow">OPEN / CLOSE / TENANT</div>
       <h1>街の変化を、<br>いち早く。</h1>
       <p>全国の開店・閉店・テナント情報を、エリアとデータでわかりやすく。</p>
-      <div class="search-box"><input id="q" placeholder="店舗名・エリア・業種・駅名などで検索"><button id="search">検索</button></div>
+      <div class="search-box">
+        <input id="q" placeholder="店舗名・エリア・業種・駅名などで検索">
+        <button id="search">検索</button>
+      </div>
     </div>
+
     <div class="hero-side">
       <div class="side-title">いま、街で起きていること</div>
       <div class="side-row"><span>登録店舗情報</span><strong id="storesTotal">-</strong></div>
@@ -81,11 +155,42 @@
   </div>
 </section>
 
-<section class="stats-wrap">
-  <div class="stat-card green"><span>本日の開店</span><strong id="todayOpen">0</strong><small>件</small></div>
-  <div class="stat-card orange"><span>今週の開店予定</span><strong id="weekOpen">0</strong><small>件</small></div>
-  <div class="stat-card red"><span>今週の閉店予定</span><strong id="weekClose">0</strong><small>件</small></div>
-  <div class="stat-card blue"><span>テナント募集確認</span><strong id="tenant">0</strong><small>件</small></div>
+<section class="compact-stats" aria-label="最新集計">
+  <div class="compact-stat"><span>本日の開店</span><strong id="todayOpen">0</strong><small>件</small></div>
+  <div class="compact-stat"><span>今週の開店予定</span><strong id="weekOpen">0</strong><small>件</small></div>
+  <div class="compact-stat"><span>今週の閉店予定</span><strong id="weekClose">0</strong><small>件</small></div>
+  <div class="compact-stat"><span>テナント募集確認</span><strong id="tenant">0</strong><small>件</small></div>
+</section>
+
+<section class="finder-wrap">
+  <div class="finder-grid">
+    <section id="areas" class="finder-card">
+      <div class="section-label">AREA</div>
+      <h2>エリアから探す</h2>
+      <div class="area-grid">
+        <button data-pref="北海道">北海道</button>
+        <button data-pref="東京都">東京都</button>
+        <button data-pref="神奈川県">神奈川県</button>
+        <button data-pref="愛知県">愛知県</button>
+        <button data-pref="大阪府">大阪府</button>
+        <button data-pref="福岡県">福岡県</button>
+      </div>
+    </section>
+
+    <section id="categories" class="finder-card">
+      <div class="section-label">CATEGORY</div>
+      <h2>業種から探す</h2>
+      <div id="categoryGrid" class="category-grid">
+        <button data-cat="ラーメン">ラーメン</button>
+        <button data-cat="中華">中華</button>
+        <button data-cat="カフェ">カフェ</button>
+        <button data-cat="居酒屋">居酒屋</button>
+        <button data-cat="焼肉">焼肉</button>
+        <button data-cat="美容">美容</button>
+        <button data-cat="コンビニ">コンビニ</button>
+      </div>
+    </section>
+  </div>
 </section>
 
 <main class="container">
@@ -102,33 +207,13 @@
       </div>
     </div>
 
-    <div id="grid" class="store-grid"><div class="empty">読み込み中...</div></div>
+    <div id="grid" class="store-grid">
+      <div class="empty">読み込み中...</div>
+    </div>
   </section>
-
-  <div class="two-col">
-    <section id="areas" class="section-card">
-      <div class="section-label">AREA</div><h2>エリアから探す</h2>
-      <div class="area-grid">
-        <button data-pref="北海道">北海道</button><button data-pref="東京都">東京都</button>
-        <button data-pref="神奈川県">神奈川県</button><button data-pref="愛知県">愛知県</button>
-        <button data-pref="大阪府">大阪府</button><button data-pref="福岡県">福岡県</button>
-      </div>
-    </section>
-
-    <section id="categories" class="section-card">
-      <div class="section-label">CATEGORY</div><h2>業種から探す</h2>
-      <div id="categoryGrid" class="category-grid">
-        <button data-cat="ラーメン">ラーメン</button>
-        <button data-cat="中華">中華</button>
-        <button data-cat="カフェ">カフェ</button>
-        <button data-cat="居酒屋">居酒屋</button>
-        <button data-cat="焼肉">焼肉</button>
-        <button data-cat="美容">美容</button>
-        <button data-cat="コンビニ">コンビニ</button>
-      </div>
-    </section>
-  </div>
 </main>
+
 <footer>© 2026 開店閉店マップ</footer>
 <script src="app.js"></script>
-</body></html>
+</body>
+</html>
