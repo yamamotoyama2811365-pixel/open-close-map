@@ -20,7 +20,7 @@ from collectors.openclose_hub import (
     promote_hub_candidates,reset_and_hide_hub_promotions
 )
 
-app=FastAPI(title="Open Close Map API",version="1.3.1")
+app=FastAPI(title="Open Close Map API",version="1.3.2")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -143,7 +143,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.3.1",
+        "version":"1.3.2",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
