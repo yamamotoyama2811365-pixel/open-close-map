@@ -9,6 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import psycopg
 
 from collectors.runner import run_collectors
+from collectors.source_health import (
+    record_cycle_source_runs,get_source_health
+)
 from collectors.tenant_watcher import (
     promote_existing_tenant_candidates,scan_closed_store_tenant_news,
     verify_tenant_listings,tenant_watch_status
@@ -34,7 +37,7 @@ from collectors.category_manager import (
 )
 from collectors.activity import compute_activity_score
 
-app=FastAPI(title="Open Close Map API",version="1.12.1")
+app=FastAPI(title="Open Close Map API",version="1.13.0")
 
 FRONTEND_ORIGIN=os.getenv(
     "FRONTEND_ORIGIN",
@@ -171,6 +174,33 @@ def init_db():
             """)
 
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS collector_source_runs(
+                    id BIGSERIAL PRIMARY KEY,
+                    run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    family TEXT NOT NULL,
+                    source_key TEXT NOT NULL,
+                    source_name TEXT NOT NULL,
+                    fetched INTEGER NOT NULL DEFAULT 0,
+                    inserted INTEGER NOT NULL DEFAULT 0,
+                    duplicates INTEGER NOT NULL DEFAULT 0,
+                    rejected INTEGER NOT NULL DEFAULT 0,
+                    error_count INTEGER NOT NULL DEFAULT 0,
+                    error_text TEXT,
+                    ok BOOLEAN NOT NULL DEFAULT TRUE
+                )
+            """)
+
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_collector_source_runs_key_time
+                ON collector_source_runs(source_key,run_at DESC)
+            """)
+
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_collector_source_runs_time
+                ON collector_source_runs(run_at DESC)
+            """)
+
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS source_backfill_state(
                     source_key TEXT PRIMARY KEY,
                     next_page INTEGER NOT NULL DEFAULT 4,
@@ -241,7 +271,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.12.1",
+        "version":"1.13.0",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -962,7 +992,16 @@ def category_backfill(limit:int=Query(default=200,ge=1,le=1000)):
 def collect():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
-    return {"ok":True,**run_collectors(DATABASE_URL)}
+
+    result=run_collectors(DATABASE_URL)
+
+    record_cycle_source_runs(
+        DATABASE_URL,
+        hub=result.get("hub"),
+        rss=result
+    )
+
+    return {"ok":True,**result}
 
 @app.post("/api/enrich-addresses",dependencies=[Depends(require_admin)])
 def enrich_addresses(limit:int=Query(default=50,ge=1,le=200)):
@@ -1217,6 +1256,13 @@ def full_cycle():
 
     rss=run_collectors(DATABASE_URL,include_hub=False)
 
+    source_health_log=record_cycle_source_runs(
+        DATABASE_URL,
+        hub=hub_collected,
+        rss=rss,
+        backfill=backfill
+    )
+
     hub_enriched=enrich_hub_candidates(DATABASE_URL,limit=20)
     hub_processed=promote_hub_candidates(
         DATABASE_URL,hub_enriched.get("enriched_ids",[])
@@ -1250,6 +1296,7 @@ def full_cycle():
             "processed":hub_processed
         },
         "rss":rss,
+        "source_health_log":source_health_log,
         "rss_processed":rss_processed,
         "category_repair":category_repair,
         "tenant":{
@@ -1289,6 +1336,13 @@ def hub_cycle():
 
     collected=collect_openclose_hub(DATABASE_URL)
     backfill=collect_backfill_step(DATABASE_URL)
+
+    record_cycle_source_runs(
+        DATABASE_URL,
+        hub=collected,
+        backfill=backfill
+    )
+
     enriched=enrich_hub_candidates(DATABASE_URL,limit=20)
     processed=promote_hub_candidates(
         DATABASE_URL,
@@ -1305,6 +1359,16 @@ def hub_cycle():
         "enriched":enriched,
         "processed":processed,
         "category_repair":category_repair
+    }
+
+@app.get("/api/source-health",dependencies=[Depends(require_admin)])
+def source_health():
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+
+    return {
+        "ok":True,
+        **get_source_health(DATABASE_URL)
     }
 
 @app.get("/api/source-hub-status",dependencies=[Depends(require_admin)])
