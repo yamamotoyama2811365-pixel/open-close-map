@@ -34,7 +34,7 @@ from collectors.category_manager import (
 )
 from collectors.activity import compute_activity_score
 
-app=FastAPI(title="Open Close Map API",version="1.9.0")
+app=FastAPI(title="Open Close Map API",version="1.9.1")
 
 FRONTEND_ORIGIN=os.getenv(
     "FRONTEND_ORIGIN",
@@ -240,7 +240,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.9.0",
+        "version":"1.9.1",
         "time":datetime.now(timezone.utc).isoformat()
     }
 

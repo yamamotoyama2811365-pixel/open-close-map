@@ -142,6 +142,23 @@ h1{font-size:clamp(28px,4vw,42px);line-height:1.3;letter-spacing:-.04em;margin:0
 }
 """
 
+ACTIVITY_CSS = """
+.activity-card{border:1px solid var(--line);border-radius:16px;padding:18px;background:linear-gradient(180deg,#fff,#f8fafc)}
+.activity-top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
+.activity-score{font-size:44px;line-height:1;font-weight:900;color:var(--navy)}
+.activity-score small{font-size:14px;font-weight:700;color:var(--muted)}
+.activity-label{font-size:15px;font-weight:900}
+.activity-meter{height:10px;background:#e9eef3;border-radius:999px;overflow:hidden;margin:14px 0}
+.activity-meter span{display:block;height:100%;background:#17263a;border-radius:999px}
+.activity-counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.activity-count{padding:10px;border-radius:10px;background:#fff;border:1px solid var(--line);text-align:center}
+.activity-count strong{display:block;font-size:18px}
+.activity-count span{font-size:11px;color:var(--muted)}
+@media(max-width:520px){
+  .activity-counts{grid-template-columns:1fr 1fr}
+}
+"""
+
 def _connect(database_url):
     import psycopg
     return psycopg.connect(database_url)
@@ -232,18 +249,7 @@ def page_shell(origin, title, description, canonical_path, body, json_ld=None, n
 <meta property="og:description" content="{esc(description)}">
 <meta property="og:url" content="{esc(canonical)}">
 <meta name="twitter:card" content="summary">
-<style>{CSS}.activity-card{border:1px solid var(--line);border-radius:16px;padding:18px;background:linear-gradient(180deg,#fff,#f8fafc)}
-.activity-top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
-.activity-score{font-size:44px;line-height:1;font-weight:900;color:var(--navy)}
-.activity-score small{font-size:14px;font-weight:700;color:var(--muted)}
-.activity-label{font-size:15px;font-weight:900}
-.activity-meter{height:10px;background:#e9eef3;border-radius:999px;overflow:hidden;margin:14px 0}
-.activity-meter span{display:block;height:100%;background:#17263a;border-radius:999px}
-.activity-counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
-.activity-count{padding:10px;border-radius:10px;background:#fff;border:1px solid var(--line);text-align:center}
-.activity-count strong{display:block;font-size:18px}
-.activity-count span{font-size:11px;color:var(--muted)}
-</style>
+<style>{CSS}{ACTIVITY_CSS}</style>
 {json_ld_html}
 </head>
 <body>
