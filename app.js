@@ -7,21 +7,8 @@ const esc=s=>String(s??'')
   .replaceAll('>','&gt;')
   .replaceAll('"','&quot;');
 
-const fallbackMap={
-  'ラーメン':'assets/ramen.png',
-  'カフェ':'assets/cafe.png',
-  '居酒屋':'assets/izakaya.png',
-  '焼肉':'assets/yakiniku.png',
-  '美容':'assets/beauty.png',
-  'コンビニ':'assets/convenience.png',
-  'テナント':'assets/tenant.png'
-};
-
 let currentMode='all';
 
-function imageFor(x){
-  return x.image_url||fallbackMap[x.category]||fallbackMap['テナント'];
-}
 
 function label(s){
   return {
@@ -33,24 +20,39 @@ function label(s){
   }[s]||s||'店舗情報';
 }
 
+function renderHeroLatest(items){
+  const box=$('heroLatest');
+  if(!box)return;
+
+  const rows=(items||[]).slice(0,5);
+  box.innerHTML=rows.length
+    ?rows.map(x=>`
+      <div class="hero-mini-row">
+        <span class="hero-mini-status ${esc(x.status)}">${esc(label(x.status))}</span>
+        <span class="hero-mini-name">${esc(x.name||'店舗名未確認')}</span>
+        <span class="hero-mini-date">${esc(x.open_date||x.close_date||'')}</span>
+      </div>
+    `).join('')
+    :'<div class="mini-loading">表示できる情報がありません。</div>';
+}
+
 function render(items){
   $('grid').innerHTML=items?.length
     ?items.map(x=>`
       <article class="store-card" data-id="${x.id}" data-status="${esc(x.status||'')}" data-category="${esc(x.category||'')}">
-        <div class="store-image" style="background-image:url('${esc(imageFor(x))}')">
-          <span class="badge ${esc(x.status)}">${esc(label(x.status))}</span>
-        </div>
+        <div class="status-orb ${esc(x.status)}"><span>▥</span></div>
         <div class="store-body">
-          <div class="store-name">${esc(x.name||'店舗名未確認')}</div>
-          <div class="store-meta">
-            ${esc(x.open_date||x.close_date||'日付未確認')}<br>
-            ${esc([x.prefecture,x.city].filter(Boolean).join(' ')||'エリア未確認')}
-          </div>
-          <div class="store-tags">
+          <div class="store-topline">
+            <span class="badge ${esc(x.status)}">${esc(label(x.status))}</span>
             ${x.category?`<span class="store-tag">${esc(x.category)}</span>`:''}
+          </div>
+          <div class="store-name">${esc(x.name||'店舗名未確認')}</div>
+          <div class="store-meta">${esc([x.prefecture,x.city].filter(Boolean).join(' ')||'エリア未確認')}</div>
+          <div class="store-tags">
             ${x.confidence?`<span class="store-tag">確度 ${esc(x.confidence)}%</span>`:''}
           </div>
         </div>
+        <div class="store-date">${esc(x.open_date||x.close_date||'日付未確認')}</div>
       </article>
     `).join('')
     :'<div class="empty">表示できる店舗情報がありません。</div>';
@@ -123,6 +125,7 @@ async function stores(mode=currentMode){
     const items=await fetchStores({limit:'200'});
     const filtered=filterByMode(items,mode).slice(0,40);
     render(filtered);
+    renderHeroLatest(filtered);
   }catch(e){
     console.error(e);
     $('grid').innerHTML='<div class="empty">店舗情報を読み込めませんでした。</div>';
@@ -173,6 +176,30 @@ document.querySelectorAll('.status-tab').forEach(btn=>{
     window.gaEvent?.('status_filter',{status_mode:btn.dataset.status});
     updateTabUI(btn.dataset.status);
     stores(btn.dataset.status);
+  };
+});
+
+
+function jumpToLatest(mode){
+  updateTabUI(mode);
+  stores(mode);
+  document.getElementById('latest')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+document.querySelectorAll('[data-shortcut-status]').forEach(btn=>{
+  btn.onclick=()=>{
+    const mode=btn.dataset.shortcutStatus;
+    window.gaEvent?.('hero_status_shortcut',{status_mode:mode});
+    jumpToLatest(mode);
+  };
+});
+
+document.querySelectorAll('[data-nav-status]').forEach(link=>{
+  link.onclick=e=>{
+    e.preventDefault();
+    const mode=link.dataset.navStatus;
+    window.gaEvent?.('nav_status_select',{status_mode:mode});
+    jumpToLatest(mode);
   };
 });
 
