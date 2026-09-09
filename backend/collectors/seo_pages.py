@@ -69,6 +69,14 @@ h1{font-size:clamp(28px,4vw,42px);line-height:1.3;letter-spacing:-.04em;margin:0
 .empty{padding:38px 18px;text-align:center;color:var(--muted);font-size:13px;border:1px dashed #ced6df;border-radius:14px}
 .pagination{display:flex;justify-content:center;gap:8px;margin-top:18px}
 .pagination a{padding:8px 12px;background:#fff;border:1px solid var(--line);border-radius:9px;font-size:12px}
+.status-tabs{display:flex;gap:8px;padding:4px;background:#eef2f6;border-radius:12px;width:max-content;margin:0 0 18px}
+.status-tab{display:inline-flex;align-items:center;justify-content:center;padding:8px 16px;border-radius:9px;font-size:12px;font-weight:800;color:#697586}
+.status-tab:hover{background:#fff}
+.status-tab.active{background:#17263a;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.status-tab.opening:not(.active){color:#16825d}
+.status-tab.closing:not(.active){color:#c34a4a}
+.status-tab.active.opening{background:#16825d;color:#fff}
+.status-tab.active.closing{background:#c34a4a;color:#fff}
 .footer{background:#101d2e;color:#c6d0dc;padding:34px 0;margin-top:20px;font-size:12px}
 .footer strong{display:block;color:white;font-size:17px;margin-bottom:6px}
 .footer-links{display:flex;gap:18px;flex-wrap:wrap;margin-top:13px}
@@ -80,6 +88,7 @@ h1{font-size:clamp(28px,4vw,42px);line-height:1.3;letter-spacing:-.04em;margin:0
 @media(max-width:520px){
   .wrap{width:min(100% - 22px,1160px)}.hero{padding:32px 0}.stats{grid-template-columns:1fr}
   .panel{padding:16px;border-radius:14px}.store-card{padding:13px}.section-head{display:block}.section-head p{margin-top:4px}
+  .status-tabs{width:100%}.status-tab{flex:1}
 }
 """
 
@@ -233,10 +242,13 @@ def breadcrumb_json(origin, items):
         ]
     }
 
-def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40):
+def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40, status='all'):
     prefecture = (prefecture or "").strip()
     city = (city or "").strip() or None
     page = max(1,int(page))
+    status = (status or "all").strip().lower()
+    if status not in ("all","opening","closing"):
+        status = "all"
     offset = (page-1)*per_page
 
     with _connect(database_url) as conn:
@@ -246,16 +258,32 @@ def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40
             if city:
                 clauses.append("city=%s")
                 params.append(city)
+
+            if status == "opening":
+                clauses.append("status IN('open','opening')")
+            elif status == "closing":
+                clauses.append("status IN('closed','closing')")
+
             where = " AND ".join(clauses)
+
+            stats_clauses = ["COALESCE(status,'') <> 'excluded'","prefecture=%s"]
+            stats_params = [prefecture]
+            if city:
+                stats_clauses.append("city=%s")
+                stats_params.append(city)
+            stats_where = " AND ".join(stats_clauses)
 
             cur.execute(f"""
                 SELECT
                     COUNT(*),
                     COUNT(*) FILTER(WHERE status IN('open','opening')),
                     COUNT(*) FILTER(WHERE status IN('closed','closing'))
-                FROM stores WHERE {where}
-            """,params)
-            total,opens,closes = cur.fetchone()
+                FROM stores WHERE {stats_where}
+            """,stats_params)
+            all_total,opens,closes = cur.fetchone()
+
+            cur.execute(f"SELECT COUNT(*) FROM stores WHERE {where}",params)
+            total = cur.fetchone()[0]
 
             cur.execute(STORE_SELECT + f"""
                 WHERE {where}
@@ -302,9 +330,23 @@ def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40
         canonical_path = f"/area/{qpath(prefecture)}"
         crumbs = [("トップ","/"),(prefecture,canonical_path)]
 
+    base_canonical = canonical_path
+
+    if status == "opening":
+        title = title.replace("開店・閉店情報","開店情報")
+        desc = desc.replace("開店・閉店情報","開店情報")
+    elif status == "closing":
+        title = title.replace("開店・閉店情報","閉店情報")
+        desc = desc.replace("開店・閉店情報","閉店情報")
+
+    query_parts = []
+    if status != "all":
+        query_parts.append(f"status={status}")
     if page > 1:
         title = f"{title}（{page}ページ）"
-        canonical_path += f"?page={page}"
+        query_parts.append(f"page={page}")
+    if query_parts:
+        canonical_path += "?" + "&".join(query_parts)
 
     facet_html = []
     for name,count in facets:
@@ -315,11 +357,19 @@ def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40
 
     prev_next = []
     base_path = f"/area/{qpath(prefecture)}" + (f"/{qpath(city)}" if city else "")
+
+    def page_href(target_page):
+        qs=[]
+        if status != "all":
+            qs.append(f"status={status}")
+        if target_page > 1:
+            qs.append(f"page={target_page}")
+        return base_path + (("?"+"&".join(qs)) if qs else "")
+
     if page > 1:
-        p = page-1
-        prev_next.append(f'<a href="{base_path}' + (f'?page={p}' if p>1 else '') + '">‹ 前へ</a>')
+        prev_next.append(f'<a href="{page_href(page-1)}">‹ 前へ</a>')
     if offset + len(rows) < total:
-        prev_next.append(f'<a href="{base_path}?page={page+1}">次へ ›</a>')
+        prev_next.append(f'<a href="{page_href(page+1)}">次へ ›</a>')
 
     body = f"""
 <section class="hero">
@@ -328,7 +378,7 @@ def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40
     <h1>{esc(area_name)}の開店・閉店情報</h1>
     <p>{esc(area_name)}で確認された新規オープン、開店予定、閉店予定、閉店店舗の情報をまとめています。</p>
     <div class="stats">
-      <div class="stat"><strong>{total}</strong><span>掲載店舗情報</span></div>
+      <div class="stat"><strong>{all_total}</strong><span>掲載店舗情報</span></div>
       <div class="stat"><strong>{opens}</strong><span>開店・開店予定</span></div>
       <div class="stat"><strong>{closes}</strong><span>閉店・閉店予定</span></div>
     </div>
@@ -338,9 +388,20 @@ def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40
   <main>
     <section class="panel">
       <div class="section-head">
-        <div><h2>最新の店舗情報</h2><p>{esc(area_name)}の開店・閉店情報</p></div>
+        <div><h2>{
+          "最新の開店情報" if status=="opening"
+          else "最新の閉店情報" if status=="closing"
+          else "最新の店舗情報"
+        }</h2><p>{esc(area_name)}の開店・閉店情報</p></div>
         <p>{total}件中 {offset+1 if total else 0}〜{min(offset+len(rows),total)}件</p>
       </div>
+
+      <div class="status-tabs" role="tablist" aria-label="開店・閉店の切り替え">
+        <a class="status-tab {'active' if status=='all' else ''}" href="{base_path}" role="tab" aria-selected="{'true' if status=='all' else 'false'}">すべて</a>
+        <a class="status-tab opening {'active' if status=='opening' else ''}" href="{base_path}?status=opening" role="tab" aria-selected="{'true' if status=='opening' else 'false'}">開店</a>
+        <a class="status-tab closing {'active' if status=='closing' else ''}" href="{base_path}?status=closing" role="tab" aria-selected="{'true' if status=='closing' else 'false'}">閉店</a>
+      </div>
+
       {store_cards(rows)}
       <div class="pagination">{''.join(prev_next)}</div>
     </section>

@@ -26,7 +26,7 @@ from collectors.seo_pages import (
     render_area,render_category,render_store,sitemap_xml,robots_txt
 )
 
-app=FastAPI(title="Open Close Map API",version="1.5.0")
+app=FastAPI(title="Open Close Map API",version="1.5.1")
 
 FRONTEND_ORIGIN=os.getenv(
     "FRONTEND_ORIGIN",
@@ -202,7 +202,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.5.0",
+        "version":"1.5.1",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -543,16 +543,35 @@ def activity_score(store_id:int):
 # ---- Public SEO HTML pages ----
 
 @app.get("/seo/area/{prefecture}",response_class=HTMLResponse)
-def seo_area_prefecture(prefecture:str,page:int=Query(default=1,ge=1,le=1000)):
+def seo_area_prefecture(
+    prefecture:str,
+    page:int=Query(default=1,ge=1,le=1000),
+    status:str=Query(default="all")
+):
     if not DATABASE_URL:
         raise HTTPException(503,"Database unavailable")
-    return HTMLResponse(render_area(DATABASE_URL,PUBLIC_SITE_ORIGIN,prefecture,page=page))
+    return HTMLResponse(
+        render_area(
+            DATABASE_URL,PUBLIC_SITE_ORIGIN,prefecture,
+            page=page,status=status
+        )
+    )
 
 @app.get("/seo/area/{prefecture}/{city}",response_class=HTMLResponse)
-def seo_area_city(prefecture:str,city:str,page:int=Query(default=1,ge=1,le=1000)):
+def seo_area_city(
+    prefecture:str,
+    city:str,
+    page:int=Query(default=1,ge=1,le=1000),
+    status:str=Query(default="all")
+):
     if not DATABASE_URL:
         raise HTTPException(503,"Database unavailable")
-    return HTMLResponse(render_area(DATABASE_URL,PUBLIC_SITE_ORIGIN,prefecture,city=city,page=page))
+    return HTMLResponse(
+        render_area(
+            DATABASE_URL,PUBLIC_SITE_ORIGIN,prefecture,
+            city=city,page=page,status=status
+        )
+    )
 
 @app.get("/seo/category/{category}",response_class=HTMLResponse)
 def seo_category(category:str,page:int=Query(default=1,ge=1,le=1000)):
