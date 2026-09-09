@@ -176,6 +176,7 @@ def page_shell(origin, title, description, canonical_path, body, json_ld=None, n
 <meta name="robots" content="{robot}">
 <link rel="canonical" href="{esc(canonical)}">
 <meta property="og:type" content="website">
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5776658615046901" crossorigin="anonymous"></script>
 <meta property="og:site_name" content="{SITE_NAME}">
 <meta property="og:title" content="{esc(title)}">
 <meta property="og:description" content="{esc(description)}">
