@@ -9,6 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import psycopg
 
 from collectors.runner import run_collectors
+from collectors.tenant_watcher import (
+    promote_existing_tenant_candidates,scan_closed_store_tenant_news,
+    verify_tenant_listings,tenant_watch_status
+)
 from collectors.processor import promote_candidates, enrich_candidates
 from collectors.article_enricher import fetch_article_facts
 from collectors.address_audit import audit_addresses
@@ -29,7 +33,7 @@ from collectors.category_manager import (
     backfill_store_categories,category_stats
 )
 
-app=FastAPI(title="Open Close Map API",version="1.6.1")
+app=FastAPI(title="Open Close Map API",version="1.7.0")
 
 FRONTEND_ORIGIN=os.getenv(
     "FRONTEND_ORIGIN",
@@ -134,6 +138,36 @@ def init_db():
                 )
             """)
 
+            for q in [
+                "ALTER TABLE tenant_listings ADD COLUMN IF NOT EXISTS confidence INTEGER DEFAULT 0",
+                "ALTER TABLE tenant_listings ADD COLUMN IF NOT EXISTS match_method TEXT",
+                "ALTER TABLE tenant_listings ADD COLUMN IF NOT EXISTS query_text TEXT"
+            ]:
+                cur.execute(q)
+
+            cur.execute("""
+                DELETE FROM tenant_listings a
+                USING tenant_listings b
+                WHERE a.id>b.id
+                  AND a.store_id IS NOT DISTINCT FROM b.store_id
+                  AND a.source_url IS NOT DISTINCT FROM b.source_url
+            """)
+
+            cur.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_tenant_listing_store_url
+                ON tenant_listings(store_id,source_url)
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS tenant_watch_state(
+                    store_id BIGINT PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
+                    last_checked_at TIMESTAMPTZ,
+                    query_count BIGINT NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS source_backfill_state(
                     source_key TEXT PRIMARY KEY,
@@ -205,7 +239,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.6.1",
+        "version":"1.7.0",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -434,6 +468,56 @@ def tenant_info(store_id:int):
             "status":r[3],
             "last_verified_at":r[4].isoformat() if r[4] else None
         } for r in rows]
+    }
+
+
+@app.get("/api/stores/{store_id}/history")
+def store_history(store_id:int):
+    """
+    Exact-address history only. Conservative by design to avoid joining unrelated nearby stores.
+    """
+    if not DATABASE_URL:
+        return {"items":[]}
+
+    conn=db_conn()
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT address FROM stores
+                WHERE id=%s AND COALESCE(status,'') <> 'excluded'
+            """,(store_id,))
+            row=cur.fetchone()
+            if not row or not row[0]:
+                return {"items":[]}
+
+            address=row[0]
+            cur.execute("""
+                SELECT
+                    id,name,status,category,prefecture,city,address,
+                    open_date,close_date,source_url,source_name,official_url,
+                    last_verified_at
+                FROM stores
+                WHERE COALESCE(status,'') <> 'excluded'
+                  AND address=%s
+                ORDER BY
+                    COALESCE(open_date,close_date,created_at::date) ASC NULLS LAST,
+                    id ASC
+            """,(address,))
+            rows=cur.fetchall()
+
+    return {
+        "address":address,
+        "items":[
+            {
+                "id":r[0],"name":r[1],"status":r[2],"category":r[3],
+                "prefecture":r[4],"city":r[5],"address":r[6],
+                "open_date":r[7].isoformat() if r[7] else None,
+                "close_date":r[8].isoformat() if r[8] else None,
+                "source_url":r[9],"source_name":r[10],"official_url":r[11],
+                "last_verified_at":r[12].isoformat() if r[12] else None
+            }
+            for r in rows
+        ]
     }
 
 @app.get("/api/stores/{store_id}/area-summary")
@@ -807,6 +891,127 @@ def name_quality_audit(limit:int=Query(default=100,ge=1,le=300)):
             })
 
     return {"ok":True,"count":len(items),"items":items}
+
+
+@app.get("/api/discovery-source-status",dependencies=[Depends(require_admin)])
+def discovery_source_status():
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+
+    conn=db_conn()
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COALESCE(discovery_channel,'unknown') channel,
+                    COALESCE(publisher_name,source_name,'unknown') source,
+                    detected_status,
+                    COUNT(*) total,
+                    COUNT(*) FILTER(WHERE processed=FALSE) unprocessed,
+                    COUNT(*) FILTER(WHERE address_candidate IS NOT NULL) with_address
+                FROM discovery_items
+                GROUP BY 1,2,3
+                ORDER BY total DESC,source
+                LIMIT 250
+            """)
+            rows=cur.fetchall()
+
+    return {
+        "ok":True,
+        "items":[
+            {
+                "channel":r[0],"source":r[1],"status":r[2],
+                "total":r[3],"unprocessed":r[4],"with_address":r[5]
+            }
+            for r in rows
+        ]
+    }
+
+@app.get("/api/tenant-watch-status",dependencies=[Depends(require_admin)])
+def tenant_status():
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+    return {"ok":True,**tenant_watch_status(DATABASE_URL)}
+
+@app.post("/api/tenant-watch",dependencies=[Depends(require_admin)])
+def tenant_watch(
+    limit_stores:int=Query(default=5,ge=1,le=20)
+):
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+
+    existing=promote_existing_tenant_candidates(DATABASE_URL,limit=120)
+    searched=scan_closed_store_tenant_news(
+        DATABASE_URL,limit_stores=limit_stores,per_store=12
+    )
+    verified=verify_tenant_listings(DATABASE_URL,limit=20)
+
+    return {
+        "ok":True,
+        "existing_candidates":existing,
+        "closed_store_search":searched,
+        "verification":verified
+    }
+
+@app.post("/api/full-cycle",dependencies=[Depends(require_admin)])
+def full_cycle():
+    """
+    Hourly low-cost cycle:
+    1) dedicated open/close sources + one backfill page
+    2) diversified 18-source RSS discovery
+    3) detail enrichment/promotion
+    4) category repair
+    5) closed-store tenant watch + listing recheck
+    """
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+
+    hub_collected=collect_openclose_hub(DATABASE_URL)
+    backfill=collect_backfill_step(DATABASE_URL)
+
+    rss=run_collectors(DATABASE_URL,include_hub=False)
+
+    hub_enriched=enrich_hub_candidates(DATABASE_URL,limit=20)
+    hub_processed=promote_hub_candidates(
+        DATABASE_URL,hub_enriched.get("enriched_ids",[])
+    )
+
+    # Non-hub feeds are promoted conservatively after article enrichment.
+    rss_processed=promote_candidates(
+        DATABASE_URL,min_confidence=82,enrich_limit=20
+    )
+
+    category_repair=backfill_store_categories(
+        DATABASE_URL,limit=100
+    )
+
+    tenant_existing=promote_existing_tenant_candidates(
+        DATABASE_URL,limit=120
+    )
+    tenant_search=scan_closed_store_tenant_news(
+        DATABASE_URL,limit_stores=5,per_store=12
+    )
+    tenant_verify=verify_tenant_listings(
+        DATABASE_URL,limit=20
+    )
+
+    return {
+        "ok":True,
+        "hub":{
+            "collected":hub_collected,
+            "backfill":backfill,
+            "enriched":hub_enriched,
+            "processed":hub_processed
+        },
+        "rss":rss,
+        "rss_processed":rss_processed,
+        "category_repair":category_repair,
+        "tenant":{
+            "existing_candidates":tenant_existing,
+            "closed_store_search":tenant_search,
+            "verification":tenant_verify
+        }
+    }
 
 @app.post("/api/collect-hub",dependencies=[Depends(require_admin)])
 def collect_hub():

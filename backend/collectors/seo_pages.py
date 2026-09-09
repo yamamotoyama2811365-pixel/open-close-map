@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import json
 from datetime import date, datetime
-from urllib.parse import quote
+from urllib.parse import quote, quote_plus
 
 SITE_NAME = "開店閉店マップ"
 
@@ -66,6 +66,18 @@ h1{font-size:clamp(28px,4vw,42px);line-height:1.3;letter-spacing:-.04em;margin:0
 .map{overflow:hidden;border-radius:14px;border:1px solid var(--line);margin-top:16px;height:320px}
 .map iframe{border:0;width:100%;height:100%}
 .notice{padding:13px 15px;background:#f7f9fb;border-radius:12px;color:#657284;font-size:12px;margin-top:16px}
+.action-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.action-link{display:inline-flex;align-items:center;padding:10px 13px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:12px;font-weight:700}
+.action-link.primary{background:var(--navy);border-color:var(--navy);color:#fff}
+.tenant-box{border:1px solid var(--line);border-radius:14px;padding:15px;margin-top:12px;background:#fbfcfd}
+.tenant-box strong{display:block;color:var(--navy);margin-bottom:4px}
+.tenant-meta{font-size:12px;color:var(--muted)}
+.timeline{display:grid;gap:0;margin-top:6px}
+.timeline-item{position:relative;padding:12px 12px 12px 28px;border-left:2px solid #dbe3eb;margin-left:8px}
+.timeline-item:before{content:"";position:absolute;left:-6px;top:19px;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid var(--navy)}
+.timeline-date{font-size:11px;color:var(--muted)}
+.timeline-name{font-weight:800;color:var(--navy);margin-top:2px}
+.timeline-status{font-size:12px;color:var(--muted)}
 .empty{padding:38px 18px;text-align:center;color:var(--muted);font-size:13px;border:1px dashed #ced6df;border-radius:14px}
 .pagination{display:flex;justify-content:center;gap:8px;margin-top:18px}
 .pagination a{padding:8px 12px;background:#fff;border:1px solid var(--line);border-radius:9px;font-size:12px}
@@ -586,6 +598,32 @@ def render_store(database_url, origin, store_id):
             """,(store_id,d["prefecture"],d["city"]))
             nearby=cur.fetchall()
 
+            tenant_rows=[]
+            cur.execute("""
+                SELECT source_name,source_url,status,last_verified_at,confidence,match_method
+                FROM tenant_listings
+                WHERE store_id=%s
+                ORDER BY
+                    CASE WHEN status='detected' THEN 0 ELSE 1 END,
+                    last_verified_at DESC NULLS LAST,id DESC
+                LIMIT 8
+            """,(store_id,))
+            tenant_rows=cur.fetchall()
+
+            history=[]
+            if d["address"]:
+                cur.execute("""
+                    SELECT id,name,status,open_date,close_date,category
+                    FROM stores
+                    WHERE COALESCE(status,'') <> 'excluded'
+                      AND address=%s
+                    ORDER BY
+                        COALESCE(open_date,close_date,created_at::date) ASC NULLS LAST,
+                        id ASC
+                    LIMIT 30
+                """,(d["address"],))
+                history=cur.fetchall()
+
     ev=event_date(d)
     label,cls=status_info(d["status"],ev)
     area="".join(x for x in [d["prefecture"],d["city"]] if x)
@@ -617,6 +655,65 @@ def render_store(database_url, origin, store_id):
         map_src="https://www.google.com/maps?q="+quote(d["address"])+"&output=embed"
         map_html=f'<div class="map"><iframe loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="{esc(map_src)}" title="{esc(d["name"])}の地図"></iframe></div>'
 
+    google_maps_html=""
+    tenant_search_html=""
+    if d["address"]:
+        maps_query=f'{d["name"]} {d["address"]}'
+        maps_url="https://www.google.com/maps/search/?api=1&query="+quote_plus(maps_query)
+        google_maps_html=f"""
+        <div class="action-row">
+          <a class="action-link primary" href="{esc(maps_url)}" target="_blank" rel="noopener">
+            Google Mapsで口コミ・周辺写真を見る ↗
+          </a>
+        </div>
+        <div class="notice">
+          Google Maps・ストリートビューの撮影時期や位置により、現在の店舗外観・看板・入口と異なる場合があります。
+        </div>
+        """
+
+        tenant_query=f'"{d["address"]}" テナント募集 貸店舗 居抜き'
+        tenant_search_url="https://www.google.com/search?q="+quote_plus(tenant_query)
+        tenant_search_html=f'<a class="action-link" href="{esc(tenant_search_url)}" target="_blank" rel="noopener">この住所のテナント情報をWeb検索 ↗</a>'
+
+    tenant_html=""
+    if tenant_rows:
+        parts=[]
+        for source_name,source_url,tstatus,last_verified,confidence,match_method in tenant_rows:
+            state="募集情報を確認" if tstatus=="detected" else "現在は募集情報を確認できません"
+            checked=last_verified.strftime("%Y年%m月%d日") if hasattr(last_verified,"strftime") else (str(last_verified)[:10] if last_verified else "未確認")
+            link=(
+                f'<a class="source-link" href="{esc(source_url)}" target="_blank" rel="noopener">'
+                f'{esc(source_name or "掲載元")}を確認 ↗</a>'
+                if source_url else ""
+            )
+            parts.append(f"""
+            <div class="tenant-box">
+              <strong>{esc(state)}</strong>
+              <div class="tenant-meta">最終確認：{esc(checked)}{("　・　照合確度 "+str(confidence)+"%") if confidence else ""}</div>
+              {link}
+            </div>
+            """)
+        tenant_html="".join(parts)
+    else:
+        tenant_html='<div class="tenant-box"><strong>テナント募集情報は現在確認できていません</strong><div class="tenant-meta">公開情報を定期確認しています。募集が見つかった場合に掲載します。</div></div>'
+
+    history_html=""
+    if history and len(history)>1:
+        parts=[]
+        for hid,hname,hstatus,hopen,hclose,hcat in history:
+            hev=hclose if hstatus in ("closing","closed") else hopen
+            hlabel,_=status_info(hstatus,hev)
+            parts.append(f"""
+            <div class="timeline-item">
+              <div class="timeline-date">{fmt_date(hev)}</div>
+              <div class="timeline-name"><a href="/store/{hid}">{esc(hname)}</a></div>
+              <div class="timeline-status">{esc(hlabel)}{("　・　"+esc(hcat)) if hcat else ""}</div>
+            </div>
+            """)
+        history_html='<div class="timeline">'+"".join(parts)+'</div>'
+    elif d["address"]:
+        history_html='<div class="empty">この住所では、現在ほかの店舗履歴を確認できていません。</div>'
+
     area_links=[]
     if d["prefecture"]:
         area_links.append(f'<a class="facet" href="/area/{qpath(d["prefecture"])}">{esc(d["prefecture"])}</a>')
@@ -641,8 +738,22 @@ def render_store(database_url, origin, store_id):
       <dl class="detail-grid">{detail_html}</dl>
       {links}
       {map_html}
+      {google_maps_html}
       <div class="notice">掲載内容は確認時点の情報です。営業状況・開閉店日などは変更される場合があるため、必要に応じて公式情報・掲載元をご確認ください。</div>
     </section>
+
+    <section class="panel">
+      <div class="section-head"><div><h2>この場所の店舗履歴</h2><p>{esc(d["address"] or area)}</p></div></div>
+      {history_html}
+    </section>
+
+    <section class="panel">
+      <div class="section-head"><div><h2>閉店後・テナント情報</h2><p>貸店舗・居抜き・テナント募集の公開情報</p></div></div>
+      {tenant_html}
+      <div class="action-row">{tenant_search_html}</div>
+      <div class="notice">募集情報が見つからなくなった場合も「成約済み」とは断定せず、「現在は募集情報を確認できません」と表示します。</div>
+    </section>
+
     <section class="panel">
       <div class="section-head"><div><h2>周辺の開店・閉店情報</h2><p>{esc(area)}の関連店舗</p></div></div>
       {store_cards(nearby)}
