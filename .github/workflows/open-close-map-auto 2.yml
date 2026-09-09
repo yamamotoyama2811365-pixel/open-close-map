@@ -1,0 +1,174 @@
+name: Open Close Map Auto Cycle
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: open-close-map-auto-cycle
+  cancel-in-progress: false
+
+jobs:
+  full-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Run full data cycle
+        shell: bash
+        env:
+          OPEN_CLOSE_ADMIN_KEY: ${{ secrets.OPEN_CLOSE_ADMIN_KEY }}
+        run: |
+          set -euo pipefail
+
+          echo "Running Open Close Map full cycle..."
+          curl \
+            --fail \
+            --show-error \
+            --silent \
+            --retry 4 \
+            --retry-all-errors \
+            --retry-delay 15 \
+            --connect-timeout 30 \
+            --max-time 420 \
+            -X POST \
+            -H "X-Admin-Key: ${OPEN_CLOSE_ADMIN_KEY}" \
+            "https://open-close-map-api.onrender.com/api/full-cycle" \
+            > /tmp/full-cycle.json
+
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/full-cycle.json'))
+          print("Full cycle:", "OK" if d.get("ok") else "FAILED")
+          print("RSS fetched:", (d.get("rss") or {}).get("fetched",0))
+          print("RSS inserted:", (d.get("rss") or {}).get("inserted",0))
+          print("RSS duplicates:", (d.get("rss") or {}).get("duplicates",0))
+          print("Source run rows:", (d.get("source_health_log") or {}).get("written",0))
+          pc=d.get("prefecture_closing") or {}
+          print("Prefecture closing targets:", ", ".join(pc.get("targets") or []))
+          print("Prefecture closing fetched:", pc.get("fetched",0))
+          print("Prefecture closing inserted:", pc.get("inserted",0))
+          print("Prefecture closing duplicates:", pc.get("duplicates",0))
+          print("Tenant:", json.dumps(d.get("tenant") or {}, ensure_ascii=False)[:1200])
+          PY
+
+          echo
+          echo "Collector source health..."
+          curl \
+            --fail \
+            --show-error \
+            --silent \
+            --retry 3 \
+            --retry-all-errors \
+            --retry-delay 10 \
+            --connect-timeout 30 \
+            --max-time 120 \
+            -H "X-Admin-Key: ${OPEN_CLOSE_ADMIN_KEY}" \
+            "https://open-close-map-api.onrender.com/api/source-health" \
+            > /tmp/source-health.json
+
+          python - <<'PY'
+          import json
+
+          d=json.load(open('/tmp/source-health.json'))
+          s=d.get("summary",{})
+
+          print("")
+          print("=== SOURCE HEALTH SUMMARY ===")
+          print(
+              "configured={configured} healthy={healthy} warning={warning} "
+              "error={error} idle={idle} never_run={never_run}".format(**s)
+          )
+          print("")
+          print("{:<10} {:<27} {:>7} {:>7} {:>7} {:>7} {:>8}".format(
+              "STATUS","SOURCE","FETCH","NEW","DUP","ERR","NEW-24H"
+          ))
+          print("-"*92)
+
+          for x in d.get("items",[]):
+              last=x.get("latest") or {}
+              rolling=x.get("rolling") or {}
+              print("{:<10} {:<27} {:>7} {:>7} {:>7} {:>7} {:>8}".format(
+                  x.get("status",""),
+                  (x.get("source_name") or "")[:27],
+                  last.get("fetched",0) or 0,
+                  last.get("inserted",0) or 0,
+                  last.get("duplicates",0) or 0,
+                  last.get("error_count",0) or 0,
+                  rolling.get("inserted_24h",0) or 0
+              ))
+
+          bad=[
+              x for x in d.get("items",[])
+              if x.get("status") in ("error","warning")
+          ]
+          if bad:
+              print("")
+              print("=== WARNINGS / ERRORS ===")
+              for x in bad:
+                  last=x.get("latest") or {}
+                  print(
+                      f"- {x.get('source_name')} [{x.get('status')}]: "
+                      f"{last.get('error') or 'collector warning'}"
+                  )
+          PY
+
+          echo
+          echo "Prefecture coverage..."
+          curl \
+            --fail \
+            --show-error \
+            --silent \
+            --retry 3 \
+            --retry-all-errors \
+            --retry-delay 10 \
+            --connect-timeout 30 \
+            --max-time 120 \
+            -H "X-Admin-Key: ${OPEN_CLOSE_ADMIN_KEY}" \
+            "https://open-close-map-api.onrender.com/api/prefecture-coverage" \
+            > /tmp/prefecture-coverage.json
+
+          python - <<'PY'
+          import json
+
+          d=json.load(open('/tmp/prefecture-coverage.json'))
+
+          print("")
+          print("=== PREFECTURE COVERAGE ===")
+          print(
+              f"prefectures={d.get('prefectures',0)} "
+              f"needs_more_closing={d.get('needs_more_closing_collection',0)}"
+          )
+          print("")
+          print("{:<8} {:>8} {:>8} {:>9} {:>9} {:>10}".format(
+              "PREF","OPEN365","CLOSE365","OPEN-PEND","CLOSE-PEND","NEED-CLOSE"
+          ))
+          print("-"*68)
+
+          for x in d.get("items",[]):
+              print("{:<8} {:>8} {:>8} {:>9} {:>9} {:>10}".format(
+                  x.get("prefecture",""),
+                  x.get("opening_365d",0),
+                  x.get("closing_365d",0),
+                  x.get("opening_pending",0),
+                  x.get("closing_pending",0),
+                  "YES" if x.get("needs_more_closing_collection") else ""
+              ))
+          PY
+
+          echo
+          echo "Checking health..."
+          curl \
+            --fail \
+            --show-error \
+            --silent \
+            --retry 3 \
+            --retry-all-errors \
+            --retry-delay 10 \
+            --connect-timeout 30 \
+            --max-time 120 \
+            "https://open-close-map-api.onrender.com/health"
+
+          echo
+          echo "Done."
