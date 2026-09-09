@@ -169,8 +169,30 @@ document.querySelectorAll('[data-pref]').forEach(b=>{
   b.onclick=()=>location.href=`/area/${encodeURIComponent(b.dataset.pref)}`;
 });
 
-document.querySelectorAll('[data-cat]').forEach(b=>{
-  b.onclick=()=>location.href=`/category/${encodeURIComponent(b.dataset.cat)}`;
-});
+function bindCategoryButtons(){
+  document.querySelectorAll('[data-cat]').forEach(b=>{
+    b.onclick=()=>location.href=`/category/${encodeURIComponent(b.dataset.cat)}`;
+  });
+}
 
-Promise.all([stats(),stores()]);
+async function loadCategories(){
+  try{
+    const d=await getJSON(API+'/api/categories');
+    const items=(d.items||[])
+      .filter(x=>x.category&&x.category!=='業種未分類')
+      .slice(0,14);
+
+    if(items.length){
+      $('categoryGrid').innerHTML=items.map(x=>
+        `<button data-cat="${esc(x.category)}">${esc(x.category)} <small>${esc(x.count)}</small></button>`
+      ).join('');
+    }
+  }catch(e){
+    console.warn('category list fallback',e);
+  }
+
+  bindCategoryButtons();
+}
+
+bindCategoryButtons();
+Promise.all([stats(),stores(),loadCategories()]);
