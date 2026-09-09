@@ -1,0 +1,31 @@
+name: Open Close Map Auto Cycle
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: open-close-map-auto-cycle
+  cancel-in-progress: false
+
+jobs:
+  hub-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Run hub cycle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Running Open Close Map hub cycle..."
+          curl             --fail             --show-error             --silent             --retry 4             --retry-all-errors             --retry-delay 15             --connect-timeout 30             --max-time 240             -X POST             "https://open-close-map-api.onrender.com/api/hub-cycle"
+
+          echo
+          echo "Checking backfill status..."
+          curl             --fail             --show-error             --silent             --retry 3             --retry-all-errors             --retry-delay 10             --connect-timeout 30             --max-time 120             "https://open-close-map-api.onrender.com/api/backfill-status"
+
+          echo
+          echo "Done."
