@@ -34,7 +34,7 @@ from collectors.category_manager import (
 )
 from collectors.activity import compute_activity_score
 
-app=FastAPI(title="Open Close Map API",version="1.9.1")
+app=FastAPI(title="Open Close Map API",version="1.12.1")
 
 FRONTEND_ORIGIN=os.getenv(
     "FRONTEND_ORIGIN",
@@ -57,6 +57,7 @@ app.add_middleware(
 
 DATABASE_URL=os.getenv("DATABASE_URL","").strip()
 ADMIN_KEY=os.getenv("ADMIN_KEY","").strip()
+GA_MEASUREMENT_ID=os.getenv("GA_MEASUREMENT_ID","G-ZB4T13GM5P").strip()
 
 PUBLIC_SITE_ORIGIN=os.getenv(
     "PUBLIC_SITE_ORIGIN",
@@ -240,7 +241,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.9.1",
+        "version":"1.12.1",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -251,6 +252,16 @@ def health():
         "database_configured":bool(DATABASE_URL),
         "admin_key_configured":bool(ADMIN_KEY),
         "time":datetime.now(timezone.utc).isoformat()
+    }
+
+@app.get("/api/public-config")
+def public_config():
+    """
+    Public, non-secret frontend configuration.
+    GA Measurement IDs are designed to be public in page source.
+    """
+    return {
+        "ga_measurement_id":GA_MEASUREMENT_ID
     }
 
 @app.get("/api/stats")
@@ -626,6 +637,141 @@ def public_categories():
     if not DATABASE_URL:
         return {"items":[]}
     return category_stats(DATABASE_URL)
+
+
+@app.get("/api/national-insights")
+def national_insights():
+    conn=db_conn()
+    if conn is None:
+        raise HTTPException(503,"Database unavailable")
+
+    where="COALESCE(status,'') <> 'excluded'"
+
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                WITH months AS (
+                    SELECT generate_series(
+                        date_trunc('month',CURRENT_DATE)-INTERVAL '11 months',
+                        date_trunc('month',CURRENT_DATE),
+                        INTERVAL '1 month'
+                    )::date month_start
+                ),
+                oe AS (
+                    SELECT date_trunc('month',open_date)::date month_start,COUNT(*) cnt
+                    FROM stores
+                    WHERE {where}
+                      AND open_date IS NOT NULL
+                      AND open_date >= date_trunc('month',CURRENT_DATE)-INTERVAL '11 months'
+                      AND open_date < date_trunc('month',CURRENT_DATE)+INTERVAL '1 month'
+                    GROUP BY 1
+                ),
+                ce AS (
+                    SELECT date_trunc('month',close_date)::date month_start,COUNT(*) cnt
+                    FROM stores
+                    WHERE {where}
+                      AND close_date IS NOT NULL
+                      AND close_date >= date_trunc('month',CURRENT_DATE)-INTERVAL '11 months'
+                      AND close_date < date_trunc('month',CURRENT_DATE)+INTERVAL '1 month'
+                    GROUP BY 1
+                )
+                SELECT m.month_start,COALESCE(o.cnt,0),COALESCE(c.cnt,0)
+                FROM months m
+                LEFT JOIN oe o USING(month_start)
+                LEFT JOIN ce c USING(month_start)
+                ORDER BY m.month_start
+            """)
+            monthly=cur.fetchall()
+
+            cur.execute(f"""
+                SELECT
+                    COALESCE(NULLIF(category,''),'業種未分類'),
+                    COUNT(*) FILTER(
+                        WHERE open_date IS NOT NULL
+                          AND open_date>=CURRENT_DATE-INTERVAL '365 days'
+                          AND open_date<=CURRENT_DATE
+                    ),
+                    COUNT(*) FILTER(
+                        WHERE close_date IS NOT NULL
+                          AND close_date>=CURRENT_DATE-INTERVAL '365 days'
+                          AND close_date<=CURRENT_DATE
+                    )
+                FROM stores
+                WHERE {where}
+                GROUP BY 1
+                HAVING
+                    COUNT(*) FILTER(
+                        WHERE open_date IS NOT NULL
+                          AND open_date>=CURRENT_DATE-INTERVAL '365 days'
+                          AND open_date<=CURRENT_DATE
+                    )
+                    +
+                    COUNT(*) FILTER(
+                        WHERE close_date IS NOT NULL
+                          AND close_date>=CURRENT_DATE-INTERVAL '365 days'
+                          AND close_date<=CURRENT_DATE
+                    ) > 0
+                ORDER BY 2+3 DESC,1
+                LIMIT 20
+            """)
+            cats=cur.fetchall()
+
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM stores
+                WHERE COALESCE(status,'') <> 'excluded'
+            """)
+            total=cur.fetchone()[0]
+
+    monthly_items=[
+        {
+            "month":m.isoformat(),
+            "open":int(o or 0),
+            "close":int(c or 0),
+            "net":int(o or 0)-int(c or 0)
+        }
+        for m,o,c in monthly
+    ]
+
+    excluded={"業種未分類","未分類","小売","飲食店"}
+    category_items=[]
+    for cat,o,c in cats:
+        if not cat or cat in excluded:
+            continue
+        category_items.append({
+            "category":cat,
+            "open":int(o or 0),
+            "close":int(c or 0),
+            "net":int(o or 0)-int(c or 0)
+        })
+        if len(category_items)>=6:
+            break
+
+    open_total=sum(x["open"] for x in monthly_items)
+    close_total=sum(x["close"] for x in monthly_items)
+    observed=open_total+close_total
+    net=open_total-close_total
+
+    if observed < 10:
+        trend="データ蓄積中"
+    elif net >= max(3,round(observed*0.08)):
+        trend="開店優勢"
+    elif net <= -max(3,round(observed*0.08)):
+        trend="閉店優勢"
+    else:
+        trend="ほぼ均衡"
+
+    return {
+        "scope":"全国",
+        "period":"last_12_months",
+        "listed_stores":int(total or 0),
+        "open":open_total,
+        "close":close_total,
+        "net":net,
+        "trend":trend,
+        "monthly":monthly_items,
+        "categories":category_items
+    }
 
 
 @app.get("/api/area-insights")

@@ -108,6 +108,31 @@ h1{font-size:clamp(28px,4vw,42px);line-height:1.3;letter-spacing:-.04em;margin:0
 .month-bar.close{background:var(--red)}
 .month-name{font-size:9px;color:var(--muted);white-space:nowrap}
 .chart-legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-top:10px}
+
+.line-chart-wrap{margin-top:14px;padding:14px 14px 8px;border:1px solid var(--line);border-radius:14px;background:#fbfcfd}
+.line-chart-title{font-size:12px;font-weight:800;color:var(--navy);margin-bottom:8px}
+.line-chart-svg{display:block;width:100%;height:auto;overflow:visible}
+.line-grid{stroke:#dfe5eb;stroke-width:1}
+.line-axis-label{fill:#8793a1;font-size:9px}
+.line-open{fill:none;stroke:var(--green);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.line-close{fill:none;stroke:var(--red);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.line-open-dot{fill:var(--green);stroke:#fff;stroke-width:2}
+.line-close-dot{fill:var(--red);stroke:#fff;stroke-width:2}
+.line-zero-note{font-size:10px;color:var(--muted);margin-top:6px}
+
+.combo-chart-wrap{margin-top:14px;padding:14px 14px 8px;border:1px solid var(--line);border-radius:14px;background:#fbfcfd}
+.combo-chart-title{font-size:12px;font-weight:800;color:var(--navy);margin-bottom:8px}
+.combo-svg{display:block;width:100%;height:auto;overflow:visible}
+.combo-grid{stroke:#dfe5eb;stroke-width:1}
+.combo-axis{fill:#8793a1;font-size:9px}
+.combo-open-bar{fill:var(--green);opacity:.26}
+.combo-close-bar{fill:var(--red);opacity:.26}
+.combo-open-line{fill:none;stroke:var(--green);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.combo-close-line{fill:none;stroke:var(--red);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.combo-open-dot{fill:var(--green);stroke:#fff;stroke-width:2}
+.combo-close-dot{fill:var(--red);stroke:#fff;stroke-width:2}
+
+
 .legend-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
 .legend-dot.open{background:var(--green)}
 .legend-dot.close{background:var(--red)}
@@ -251,6 +276,7 @@ def page_shell(origin, title, description, canonical_path, body, json_ld=None, n
 <meta name="twitter:card" content="summary">
 <style>{CSS}{ACTIVITY_CSS}</style>
 {json_ld_html}
+<script src="/analytics.js"></script>
 </head>
 <body>
 <header class="site-header">
@@ -288,7 +314,7 @@ def store_cards(rows):
         area = " ".join(x for x in [d["prefecture"], d["city"]] if x)
         cat = d["category"] or "業種未分類"
         out.append(f"""
-<a class="store-card" href="/store/{d['id']}">
+<a class="store-card" href="/store/{d['id']}" data-ga-event="store_select" data-ga-store-id="{d['id']}" data-ga-status="{esc(d['status'] or '')}" data-ga-category="{esc(cat)}">
   <div class="store-date">{fmt_date(ev)}</div>
   <div class="store-main">
     <span class="badge {cls}">{esc(label)}</span>
@@ -574,6 +600,114 @@ def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40
           </div>
         """)
 
+    # --- Combined chart: bars show monthly volume, lines show direction/trend
+    chart_w=760
+    chart_h=250
+    pad_l=34
+    pad_r=18
+    pad_t=18
+    pad_b=36
+    plot_w=chart_w-pad_l-pad_r
+    plot_h=chart_h-pad_t-pad_b
+
+    combo_max=max(
+        [int(r[1] or 0) for r in monthly_trend]
+        + [int(r[2] or 0) for r in monthly_trend]
+        + [1]
+    )
+
+    y_max=max(4,combo_max)
+    if y_max<=10:
+        y_max=((y_max+1)//2)*2
+    else:
+        y_max=((y_max+4)//5)*5
+
+    step=plot_w/max(1,len(monthly_trend))
+    group_w=min(36,step*.72)
+    bar_w=max(5,(group_w-4)/2)
+
+    def cx(i):
+        return pad_l + step*(i+.5)
+
+    def sy(v):
+        return pad_t + plot_h - (plot_h*(float(v)/float(y_max)))
+
+    open_points=[]
+    close_points=[]
+    bars=[]
+    dots=[]
+    x_labels=[]
+
+    for i,(month_start,mopen,mclose) in enumerate(monthly_trend):
+        mopen=int(mopen or 0)
+        mclose=int(mclose or 0)
+        x=cx(i)
+        yo=sy(mopen)
+        yc=sy(mclose)
+        base=pad_t+plot_h
+
+        ox=x-bar_w-2
+        cx2=x+2
+
+        bars.append(
+            f'<rect class="combo-open-bar" x="{ox:.1f}" y="{yo:.1f}" width="{bar_w:.1f}" height="{max(1,base-yo):.1f}" rx="2">'
+            f'<title>{month_start.year}年{month_start.month}月 開店 {mopen}件</title></rect>'
+        )
+        bars.append(
+            f'<rect class="combo-close-bar" x="{cx2:.1f}" y="{yc:.1f}" width="{bar_w:.1f}" height="{max(1,base-yc):.1f}" rx="2">'
+            f'<title>{month_start.year}年{month_start.month}月 閉店 {mclose}件</title></rect>'
+        )
+
+        open_x=ox+bar_w/2
+        close_x=cx2+bar_w/2
+        open_points.append(f"{open_x:.1f},{yo:.1f}")
+        close_points.append(f"{close_x:.1f},{yc:.1f}")
+
+        dots.append(
+            f'<circle class="combo-open-dot" cx="{open_x:.1f}" cy="{yo:.1f}" r="3.5">'
+            f'<title>{month_start.year}年{month_start.month}月 開店 {mopen}件</title></circle>'
+        )
+        dots.append(
+            f'<circle class="combo-close-dot" cx="{close_x:.1f}" cy="{yc:.1f}" r="3.5">'
+            f'<title>{month_start.year}年{month_start.month}月 閉店 {mclose}件</title></circle>'
+        )
+
+        x_labels.append(
+            f'<text class="combo-axis" x="{x:.1f}" y="{chart_h-11}" text-anchor="middle">{month_start.month}月</text>'
+        )
+
+    grid_lines=[]
+    y_labels=[]
+    for j in range(5):
+        val=round(y_max*(4-j)/4)
+        y=pad_t+plot_h*j/4
+        grid_lines.append(
+            f'<line class="combo-grid" x1="{pad_l}" y1="{y:.1f}" x2="{chart_w-pad_r}" y2="{y:.1f}"></line>'
+        )
+        y_labels.append(
+            f'<text class="combo-axis" x="{pad_l-7}" y="{y+3:.1f}" text-anchor="end">{val}</text>'
+        )
+
+    combo_chart_html=f"""
+    <div class="combo-chart-wrap">
+      <div class="combo-chart-title">12か月の開店・閉店動向</div>
+      <svg class="combo-svg" viewBox="0 0 {chart_w} {chart_h}" role="img" aria-label="{esc(area_name)}の直近12か月の開店・閉店動向">
+        {''.join(grid_lines)}
+        {''.join(y_labels)}
+        {''.join(x_labels)}
+        {''.join(bars)}
+        <polyline class="combo-open-line" points="{' '.join(open_points)}"></polyline>
+        <polyline class="combo-close-line" points="{' '.join(close_points)}"></polyline>
+        {''.join(dots)}
+      </svg>
+      <div class="chart-legend">
+        <span><i class="legend-dot open"></i>開店</span>
+        <span><i class="legend-dot close"></i>閉店</span>
+        <span style="margin-left:auto">棒＝件数 / 線＝推移</span>
+      </div>
+    </div>
+    """
+
     category_rows=[]
     excluded_categories={"業種未分類","未分類","小売","飲食店"}
     for cat,copen,cclose in category_changes:
@@ -614,11 +748,7 @@ def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40
         <div class="insight-kpi"><span>開店 − 閉店</span><strong>{'+' if net_12m>0 else ''}{net_12m}</strong><small>件</small></div>
       </div>
 
-      <div class="monthly-chart">{''.join(month_cols)}</div>
-      <div class="chart-legend">
-        <span><i class="legend-dot open"></i>開店</span>
-        <span><i class="legend-dot close"></i>閉店</span>
-      </div>
+      {combo_chart_html}
 
       <div class="insight-note">
         ※ 開店閉店マップに登録された日付情報から算出した参考値です。実際の地域内すべての店舗数や景況を示すものではありません。
@@ -944,7 +1074,7 @@ def render_store(database_url, origin, store_id):
     if d["official_url"]:
         links += f'<a class="official-link" href="{esc(d["official_url"])}" target="_blank" rel="noopener">公式情報を確認 ↗</a>'
     if d["source_url"]:
-        links += f'<a class="source-link" href="{esc(d["source_url"])}" target="_blank" rel="noopener">掲載元：{esc(d["source_name"] or "掲載元")} ↗</a>'
+        links += f'<a class="source-link" href="{esc(d["source_url"])}" target="_blank" rel="noopener" data-ga-event="source_link_click" data-ga-store-id="{d["id"]}">掲載元：{esc(d["source_name"] or "掲載元")} ↗</a>'
 
     map_html=""
     if d["address"]:
@@ -958,7 +1088,7 @@ def render_store(database_url, origin, store_id):
         maps_url="https://www.google.com/maps/search/?api=1&query="+quote_plus(maps_query)
         google_maps_html=f"""
         <div class="action-row">
-          <a class="action-link primary" href="{esc(maps_url)}" target="_blank" rel="noopener">
+          <a class="action-link primary" href="{esc(maps_url)}" target="_blank" rel="noopener" data-ga-event="google_maps_click" data-ga-store-id="{d['id']}">
             Google Mapsで口コミ・周辺写真を見る ↗
           </a>
         </div>
@@ -969,7 +1099,7 @@ def render_store(database_url, origin, store_id):
 
         tenant_query=f'"{d["address"]}" テナント募集 貸店舗 居抜き'
         tenant_search_url="https://www.google.com/search?q="+quote_plus(tenant_query)
-        tenant_search_html=f'<a class="action-link" href="{esc(tenant_search_url)}" target="_blank" rel="noopener">この住所のテナント情報をWeb検索 ↗</a>'
+        tenant_search_html=f'<a class="action-link" href="{esc(tenant_search_url)}" target="_blank" rel="noopener" data-ga-event="tenant_search_click" data-ga-store-id="{d["id"]}">この住所のテナント情報をWeb検索 ↗</a>'
 
     tenant_html=""
     if tenant_rows:
@@ -978,7 +1108,7 @@ def render_store(database_url, origin, store_id):
             state="募集情報を確認" if tstatus=="detected" else "現在は募集情報を確認できません"
             checked=last_verified.strftime("%Y年%m月%d日") if hasattr(last_verified,"strftime") else (str(last_verified)[:10] if last_verified else "未確認")
             link=(
-                f'<a class="source-link" href="{esc(source_url)}" target="_blank" rel="noopener">'
+                f'<a class="source-link" href="{esc(source_url)}" target="_blank" rel="noopener" data-ga-event="tenant_source_click" data-ga-store-id="{d["id"]}">'
                 f'{esc(source_name or "掲載元")}を確認 ↗</a>'
                 if source_url else ""
             )

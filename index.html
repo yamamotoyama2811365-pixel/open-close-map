@@ -124,7 +124,119 @@
         justify-content:space-between;
       }
     }
-  </style>
+  
+    .hero-side{
+      align-self:flex-start;
+      min-width:210px;
+      padding:12px 14px !important;
+      border-radius:13px !important;
+    }
+    .hero-side .side-title{
+      font-size:10px !important;
+      margin-bottom:6px !important;
+      opacity:.82;
+    }
+    .hero-side .side-row{
+      min-height:0 !important;
+      padding:4px 0 !important;
+      font-size:9px !important;
+    }
+    .hero-side .side-row strong{
+      font-size:12px !important;
+    }
+
+    .national-insights{
+      max-width:1180px;
+      margin:24px auto 0;
+      padding:0 20px;
+    }
+    .national-panel{
+      background:#fff;
+      border:1px solid #e7ebef;
+      border-radius:18px;
+      padding:24px;
+      box-shadow:0 8px 24px rgba(16,24,40,.04);
+    }
+    .national-head{
+      display:flex;
+      justify-content:space-between;
+      gap:18px;
+      align-items:flex-start;
+      margin-bottom:16px;
+    }
+    .national-head h2{margin:2px 0 4px;font-size:22px}
+    .national-head p{margin:0;color:#667085;font-size:12px}
+    .national-trend-badge{
+      padding:7px 11px;
+      border-radius:999px;
+      background:#f3f5f7;
+      color:#344054;
+      font-size:11px;
+      font-weight:800;
+      white-space:nowrap;
+    }
+    .national-kpis{
+      display:flex;
+      gap:14px;
+      flex-wrap:wrap;
+      margin-bottom:14px;
+      font-size:11px;
+      color:#667085;
+    }
+    .national-kpis strong{
+      margin-left:4px;
+      color:#17263a;
+      font-size:14px;
+    }
+    .national-grid{
+      display:grid;
+      grid-template-columns:minmax(0,1.7fr) minmax(250px,.8fr);
+      gap:20px;
+      align-items:start;
+    }
+    .national-chart-wrap{
+      border:1px solid #e7ebef;
+      border-radius:14px;
+      padding:12px;
+      background:#fbfcfd;
+    }
+    .national-svg{display:block;width:100%;height:auto;overflow:visible}
+    .nat-grid{stroke:#e5e9ef;stroke-width:1}
+    .nat-axis{fill:#98a2b3;font-size:9px}
+    .nat-open-bar{fill:#16825d;opacity:.26}
+    .nat-close-bar{fill:#c34a4a;opacity:.26}
+    .nat-open-line{fill:none;stroke:#16825d;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+    .nat-close-line{fill:none;stroke:#c34a4a;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+    .nat-open-dot{fill:#16825d;stroke:#fff;stroke-width:2}
+    .nat-close-dot{fill:#c34a4a;stroke:#fff;stroke-width:2}
+    .national-legend{display:flex;gap:14px;font-size:11px;color:#667085;margin-top:8px}
+    .national-legend i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:5px}
+    .national-legend .open{background:#16825d}
+    .national-legend .close{background:#c34a4a}
+    .national-categories h3{font-size:14px;margin:0 0 10px}
+    .national-cat-list{display:grid;gap:7px}
+    .national-cat-row{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:8px;
+      align-items:center;
+      padding:9px 10px;
+      border:1px solid #e7ebef;
+      border-radius:10px;
+      font-size:12px;
+    }
+    .national-cat-row span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
+    .national-cat-row strong.up{color:#16825d}
+    .national-cat-row strong.down{color:#c34a4a}
+    .national-cat-row strong.flat{color:#667085}
+    .national-note{margin-top:12px;font-size:10px;color:#98a2b3;line-height:1.6}
+
+    @media(max-width:800px){
+      .national-grid{grid-template-columns:1fr}
+      .hero-side{min-width:0}
+    }
+
+</style>
 </head>
 <body>
 <header class="site-header">
@@ -198,6 +310,45 @@
       <p class="finder-note">その他の業種は上部の検索から探せます。</p>
     </section>
   </div>
+
+</section>
+
+<section id="national" class="national-insights">
+  <div class="national-panel">
+    <div class="section-label">NATIONAL TREND</div>
+    <div class="national-head">
+      <div>
+        <h2>全国の開店・閉店動向</h2>
+        <p>直近12か月の掲載データから全国の店舗動向を確認できます。</p>
+      </div>
+      <div id="nationalTrendBadge" class="national-trend-badge">読み込み中</div>
+    </div>
+
+    <div class="national-kpis">
+      <span>開店 <strong id="nationalOpen">-</strong></span>
+      <span>閉店 <strong id="nationalClose">-</strong></span>
+      <span>差分 <strong id="nationalNet">-</strong></span>
+    </div>
+
+    <div class="national-grid">
+      <div>
+        <div id="nationalChart" class="national-chart-wrap">
+          <div class="empty">全国動向を読み込み中...</div>
+        </div>
+      </div>
+
+      <div class="national-categories">
+        <h3>業種別増減 上位</h3>
+        <div id="nationalCategories" class="national-cat-list">
+          <div class="empty">読み込み中...</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="national-note">
+      ※ 開店閉店マップに登録された情報から算出した参考値です。実際の全国すべての店舗数や景況、人流を示すものではありません。
+    </div>
+  </div>
 </section>
 
 <main class="container">
@@ -221,6 +372,7 @@
 </main>
 
 <footer>© 2026 開店閉店マップ</footer>
+<script src="analytics.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
