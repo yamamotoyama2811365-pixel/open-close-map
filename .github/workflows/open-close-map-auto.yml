@@ -13,19 +13,43 @@ jobs:
   hub-cycle:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      OPEN_CLOSE_ADMIN_KEY: ${{ secrets.OPEN_CLOSE_ADMIN_KEY }}
 
     steps:
-      - name: Run hub cycle
+      - name: Run protected hub cycle
         shell: bash
         run: |
           set -euo pipefail
+          : "${OPEN_CLOSE_ADMIN_KEY:?GitHub secret OPEN_CLOSE_ADMIN_KEY is not configured}"
 
           echo "Running Open Close Map hub cycle..."
-          curl             --fail             --show-error             --silent             --retry 4             --retry-all-errors             --retry-delay 15             --connect-timeout 30             --max-time 240             -X POST             "https://open-close-map-api.onrender.com/api/hub-cycle"
+          curl \
+            --fail \
+            --show-error \
+            --silent \
+            --retry 4 \
+            --retry-all-errors \
+            --retry-delay 15 \
+            --connect-timeout 30 \
+            --max-time 240 \
+            -H "X-Admin-Key: ${OPEN_CLOSE_ADMIN_KEY}" \
+            -X POST \
+            "https://open-close-map-api.onrender.com/api/hub-cycle"
 
           echo
-          echo "Checking backfill status..."
-          curl             --fail             --show-error             --silent             --retry 3             --retry-all-errors             --retry-delay 10             --connect-timeout 30             --max-time 120             "https://open-close-map-api.onrender.com/api/backfill-status"
+          echo "Checking protected backfill status..."
+          curl \
+            --fail \
+            --show-error \
+            --silent \
+            --retry 3 \
+            --retry-all-errors \
+            --retry-delay 10 \
+            --connect-timeout 30 \
+            --max-time 120 \
+            -H "X-Admin-Key: ${OPEN_CLOSE_ADMIN_KEY}" \
+            "https://open-close-map-api.onrender.com/api/backfill-status"
 
           echo
           echo "Done."
