@@ -407,6 +407,7 @@ def enrich_hub_candidates(database_url,limit=20):
     import psycopg
 
     scanned=enriched=address_found=official_found=store_updates=0
+    parsed_address_found=parsed_official_found=0
     results=[]
     enriched_ids=[]
 
@@ -454,9 +455,9 @@ def enrich_hub_candidates(database_url,limit=20):
             city2=city or facts.get("city")
 
             if addr:
-                address_found+=1
+                parsed_address_found+=1
             if official:
-                official_found+=1
+                parsed_official_found+=1
 
             new_conf=calculate_confidence(
                 title,"",status,pref2,city2,event,None,addr,facility
@@ -469,7 +470,8 @@ def enrich_hub_candidates(database_url,limit=20):
                 with conn.cursor() as cur:
                     cur.execute("""
                         UPDATE discovery_items
-                        SET address_candidate=COALESCE(%s::text,address_candidate),
+                        SET store_name_candidate=COALESCE(%s::text,store_name_candidate),
+                            address_candidate=COALESCE(%s::text,address_candidate),
                             facility_name_candidate=COALESCE(%s::text,facility_name_candidate),
                             floor_candidate=COALESCE(%s::text,floor_candidate),
                             postal_code_candidate=COALESCE(%s::text,postal_code_candidate),
@@ -484,6 +486,11 @@ def enrich_hub_candidates(database_url,limit=20):
                     """,(
                         name,addr,facility,floor,postal,event,pref2,city2,official,conf,did
                     ))
+
+                    if addr:
+                        address_found+=1
+                    if official:
+                        official_found+=1
 
                     # update existing matching store only; promotion is separate
                     params=[addr,facility,floor,postal,official,conf,name]
@@ -527,7 +534,9 @@ def enrich_hub_candidates(database_url,limit=20):
     return {
         "scanned":scanned,
         "enriched":enriched,
+        "parsed_address_found":parsed_address_found,
         "address_found":address_found,
+        "parsed_official_found":parsed_official_found,
         "official_found":official_found,
         "store_updates":store_updates,
         "enriched_ids":enriched_ids,

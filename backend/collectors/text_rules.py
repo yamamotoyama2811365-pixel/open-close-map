@@ -533,6 +533,21 @@ def is_good_hub_store_name(name):
     n=norm(name)
     if n in HUB_GENERIC_NAMES:
         return False
+
+    generic_fragments = [
+        "開店・閉店ポータル",
+        "開店閉店ポータル",
+        "全国の開店・閉店情報",
+        "エリアの開店・閉店情報",
+        "エリアの開店閉店情報",
+        "開店・閉店情報を掲載",
+        "開店閉店情報を掲載",
+    ]
+    if any(x in n for x in generic_fragments):
+        return False
+
+    if re.fullmatch(r'.{0,20}(?:開店|閉店)(?:・|/)?(?:閉店|開店)?情報', n):
+        return False
     if len(n) < 2 or len(n) > 80:
         return False
     if re.search(r'20\d{2}年\d{1,2}月\d{1,2}日',n):
