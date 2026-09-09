@@ -1,8 +1,9 @@
 import os
+import hmac
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg
 
@@ -21,16 +22,50 @@ from collectors.openclose_hub import (
 )
 from collectors.backfill import collect_backfill_step,get_backfill_status
 
-app=FastAPI(title="Open Close Map API",version="1.4.0")
+app=FastAPI(title="Open Close Map API",version="1.4.1")
+
+FRONTEND_ORIGIN=os.getenv(
+    "FRONTEND_ORIGIN",
+    "https://open-close-map.onrender.com"
+).strip()
+
+ALLOWED_ORIGINS=[
+    x.strip()
+    for x in os.getenv("ALLOWED_ORIGINS",FRONTEND_ORIGIN).split(",")
+    if x.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_methods=["GET","POST","OPTIONS"],
+    allow_headers=["Content-Type","X-Admin-Key"]
 )
 
 DATABASE_URL=os.getenv("DATABASE_URL","").strip()
+ADMIN_KEY=os.getenv("ADMIN_KEY","").strip()
+
+def require_admin(
+    x_admin_key: Optional[str]=Header(default=None,alias="X-Admin-Key")
+):
+    """
+    Protect operational endpoints.
+    Fail closed if ADMIN_KEY is missing on Render.
+    """
+    if not ADMIN_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="ADMIN_KEY is not configured"
+        )
+
+    if not x_admin_key or not hmac.compare_digest(x_admin_key,ADMIN_KEY):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing X-Admin-Key"
+        )
+
+    return True
 
 def db_conn():
     return psycopg.connect(DATABASE_URL) if DATABASE_URL else None
@@ -158,7 +193,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.4.0",
+        "version":"1.4.1",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -167,6 +202,7 @@ def health():
     return {
         "ok":True,
         "database_configured":bool(DATABASE_URL),
+        "admin_key_configured":bool(ADMIN_KEY),
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -495,25 +531,25 @@ def activity_score(store_id:int):
 
 # ---- Collection / enrichment ----
 
-@app.post("/api/collect")
+@app.post("/api/collect",dependencies=[Depends(require_admin)])
 def collect():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**run_collectors(DATABASE_URL)}
 
-@app.post("/api/enrich-addresses")
+@app.post("/api/enrich-addresses",dependencies=[Depends(require_admin)])
 def enrich_addresses(limit:int=Query(default=50,ge=1,le=200)):
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**enrich_candidates(DATABASE_URL,limit=limit,include_processed=True)}
 
-@app.post("/api/backfill-addresses")
+@app.post("/api/backfill-addresses",dependencies=[Depends(require_admin)])
 def backfill_addresses(limit:int=Query(default=100,ge=1,le=500)):
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**enrich_candidates(DATABASE_URL,limit=limit,include_processed=True)}
 
-@app.post("/api/process")
+@app.post("/api/process",dependencies=[Depends(require_admin)])
 def process(
     min_confidence:int=Query(default=80,ge=60,le=98),
     enrich_limit:int=Query(default=40,ge=0,le=200)
@@ -530,21 +566,21 @@ def process(
         )
     }
 
-@app.get("/api/test-article")
+@app.get("/api/test-article",dependencies=[Depends(require_admin)])
 def test_article(url:str):
     return fetch_article_facts(url)
 
-@app.get("/api/address-audit")
+@app.get("/api/address-audit",dependencies=[Depends(require_admin)])
 def address_audit(limit:int=Query(default=50,ge=1,le=100)):
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**audit_addresses(DATABASE_URL,limit=limit)}
 
-@app.get("/api/resolve-news-url")
+@app.get("/api/resolve-news-url",dependencies=[Depends(require_admin)])
 def resolve_news_url(url:str):
     return resolve_google_news_url(url)
 
-@app.post("/api/resolve-and-backfill")
+@app.post("/api/resolve-and-backfill",dependencies=[Depends(require_admin)])
 def resolve_and_backfill():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
@@ -554,7 +590,7 @@ def resolve_and_backfill():
         **enrich_candidates(DATABASE_URL,limit=5,include_processed=True)
     }
 
-@app.post("/api/rescue-sources")
+@app.post("/api/rescue-sources",dependencies=[Depends(require_admin)])
 def rescue_source_batch():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
@@ -563,7 +599,7 @@ def rescue_source_batch():
     result=rescue_sources(DATABASE_URL,batch_size=5)
     return {"ok":True,**result}
 
-@app.get("/api/rescue-status")
+@app.get("/api/rescue-status",dependencies=[Depends(require_admin)])
 def rescue_status():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
@@ -586,31 +622,31 @@ def rescue_status():
         "summary":{r[0]:r[1] for r in rows}
     }
 
-@app.get("/api/address-quality-audit")
+@app.get("/api/address-quality-audit",dependencies=[Depends(require_admin)])
 def address_quality_audit():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**audit_and_clean(DATABASE_URL,apply=False,limit=100)}
 
-@app.post("/api/address-quality-clean")
+@app.post("/api/address-quality-clean",dependencies=[Depends(require_admin)])
 def address_quality_clean():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**audit_and_clean(DATABASE_URL,apply=True,limit=100)}
 
-@app.get("/api/non-store-audit")
+@app.get("/api/non-store-audit",dependencies=[Depends(require_admin)])
 def non_store_audit():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**audit_non_store_events(DATABASE_URL,apply=False,limit=200)}
 
-@app.post("/api/non-store-clean")
+@app.post("/api/non-store-clean",dependencies=[Depends(require_admin)])
 def non_store_clean():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**audit_non_store_events(DATABASE_URL,apply=True,limit=200)}
 
-@app.post("/api/rescue-retry")
+@app.post("/api/rescue-retry",dependencies=[Depends(require_admin)])
 def rescue_retry():
     """
     新しい救済ロジックを試せるよう、失敗/未対応/住所未取得を再キュー化。
@@ -638,7 +674,7 @@ def rescue_retry():
 
     return {"ok":True,"reset":reset}
 
-@app.get("/api/name-quality-audit")
+@app.get("/api/name-quality-audit",dependencies=[Depends(require_admin)])
 def name_quality_audit(limit:int=Query(default=100,ge=1,le=300)):
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
@@ -675,7 +711,7 @@ def name_quality_audit(limit:int=Query(default=100,ge=1,le=300)):
 
     return {"ok":True,"count":len(items),"items":items}
 
-@app.post("/api/collect-hub")
+@app.post("/api/collect-hub",dependencies=[Depends(require_admin)])
 def collect_hub():
     """
     開店閉店系の専用サイトだけを収集。
@@ -685,7 +721,7 @@ def collect_hub():
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**collect_openclose_hub(DATABASE_URL)}
 
-@app.post("/api/enrich-hub")
+@app.post("/api/enrich-hub",dependencies=[Depends(require_admin)])
 def enrich_hub():
     """
     開店閉店系サイトの個別記事から、
@@ -695,7 +731,7 @@ def enrich_hub():
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**enrich_hub_candidates(DATABASE_URL,limit=20)}
 
-@app.post("/api/hub-cycle")
+@app.post("/api/hub-cycle",dependencies=[Depends(require_admin)])
 def hub_cycle():
     """
     専用サイト収集 → 20件だけ詳細補完 → その20件の合格分だけDBへ昇格。
@@ -718,7 +754,7 @@ def hub_cycle():
         "processed":processed
     }
 
-@app.get("/api/source-hub-status")
+@app.get("/api/source-hub-status",dependencies=[Depends(require_admin)])
 def source_hub_status():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
@@ -755,7 +791,7 @@ def source_hub_status():
         } for r in rows]
     }
 
-@app.post("/api/hub-repair-reset")
+@app.post("/api/hub-repair-reset",dependencies=[Depends(require_admin)])
 def hub_repair_reset():
     """
     v1.3.0で詳細未確認のまま昇格したHub由来店舗を一度非表示にし、
@@ -765,7 +801,7 @@ def hub_repair_reset():
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**reset_and_hide_hub_promotions(DATABASE_URL)}
 
-@app.post("/api/backfill-step")
+@app.post("/api/backfill-step",dependencies=[Depends(require_admin)])
 def backfill_step():
     """
     開店閉店.comの過去ページを1回につき1ページだけ遡る。
@@ -775,7 +811,7 @@ def backfill_step():
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**collect_backfill_step(DATABASE_URL)}
 
-@app.get("/api/backfill-status")
+@app.get("/api/backfill-status",dependencies=[Depends(require_admin)])
 def backfill_status():
     """
     開店/閉店それぞれ、今どのページまで遡ったか確認。
