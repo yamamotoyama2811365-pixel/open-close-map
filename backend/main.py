@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import FastAPI, Query, HTTPException, Header, Depends
+from fastapi.responses import HTMLResponse, Response, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg
 
@@ -21,8 +22,11 @@ from collectors.openclose_hub import (
     promote_hub_candidates,reset_and_hide_hub_promotions
 )
 from collectors.backfill import collect_backfill_step,get_backfill_status
+from collectors.seo_pages import (
+    render_area,render_category,render_store,sitemap_xml,robots_txt
+)
 
-app=FastAPI(title="Open Close Map API",version="1.4.1")
+app=FastAPI(title="Open Close Map API",version="1.5.0")
 
 FRONTEND_ORIGIN=os.getenv(
     "FRONTEND_ORIGIN",
@@ -45,6 +49,11 @@ app.add_middleware(
 
 DATABASE_URL=os.getenv("DATABASE_URL","").strip()
 ADMIN_KEY=os.getenv("ADMIN_KEY","").strip()
+
+PUBLIC_SITE_ORIGIN=os.getenv(
+    "PUBLIC_SITE_ORIGIN",
+    "https://open-close-map.onrender.com"
+).strip().rstrip("/")
 
 def require_admin(
     x_admin_key: Optional[str]=Header(default=None,alias="X-Admin-Key")
@@ -193,7 +202,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.4.1",
+        "version":"1.5.0",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -530,6 +539,46 @@ def activity_score(store_id:int):
     }
 
 # ---- Collection / enrichment ----
+
+# ---- Public SEO HTML pages ----
+
+@app.get("/seo/area/{prefecture}",response_class=HTMLResponse)
+def seo_area_prefecture(prefecture:str,page:int=Query(default=1,ge=1,le=1000)):
+    if not DATABASE_URL:
+        raise HTTPException(503,"Database unavailable")
+    return HTMLResponse(render_area(DATABASE_URL,PUBLIC_SITE_ORIGIN,prefecture,page=page))
+
+@app.get("/seo/area/{prefecture}/{city}",response_class=HTMLResponse)
+def seo_area_city(prefecture:str,city:str,page:int=Query(default=1,ge=1,le=1000)):
+    if not DATABASE_URL:
+        raise HTTPException(503,"Database unavailable")
+    return HTMLResponse(render_area(DATABASE_URL,PUBLIC_SITE_ORIGIN,prefecture,city=city,page=page))
+
+@app.get("/seo/category/{category}",response_class=HTMLResponse)
+def seo_category(category:str,page:int=Query(default=1,ge=1,le=1000)):
+    if not DATABASE_URL:
+        raise HTTPException(503,"Database unavailable")
+    return HTMLResponse(render_category(DATABASE_URL,PUBLIC_SITE_ORIGIN,category,page=page))
+
+@app.get("/seo/store/{store_id}",response_class=HTMLResponse)
+def seo_store(store_id:int):
+    if not DATABASE_URL:
+        raise HTTPException(503,"Database unavailable")
+    page=render_store(DATABASE_URL,PUBLIC_SITE_ORIGIN,store_id)
+    if page is None:
+        raise HTTPException(404,"Store not found")
+    return HTMLResponse(page)
+
+@app.get("/seo/sitemap.xml")
+def seo_sitemap():
+    if not DATABASE_URL:
+        raise HTTPException(503,"Database unavailable")
+    return Response(content=sitemap_xml(DATABASE_URL,PUBLIC_SITE_ORIGIN),media_type="application/xml")
+
+@app.get("/seo/robots.txt",response_class=PlainTextResponse)
+def seo_robots():
+    return PlainTextResponse(robots_txt(PUBLIC_SITE_ORIGIN))
+
 
 @app.post("/api/collect",dependencies=[Depends(require_admin)])
 def collect():
