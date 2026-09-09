@@ -76,7 +76,6 @@ async function getJSON(u){
 async function stats(){
   const d=await getJSON(API+'/api/stats');
   $('storesTotal').textContent=d.stores_total??0;
-  $('discoveryTotal').textContent=d.discovery_unprocessed??0;
   $('todayOpen').textContent=d.today_open??0;
   $('weekOpen').textContent=d.week_open??0;
   $('weekClose').textContent=d.week_close??0;
