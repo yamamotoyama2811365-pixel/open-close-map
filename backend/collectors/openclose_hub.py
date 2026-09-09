@@ -329,7 +329,10 @@ def _insert_candidate(cur, source, title, url, raw_card_text, published, discove
         RETURNING (xmax=0)
     """,(
         fingerprint(title,url),title,source["name"],url,published,status,pref,city,conf,
-        raw_card_text[:1800],name,event,cat,source["name"],source["urls"][0],
+        raw_card_text[:1800],name,event,cat,source["name"],
+        (
+            (source.get("urls") or [source.get("base_url") or url])[0]
+        ),
         discovery_channel
     ))
     return bool(cur.fetchone()[0])

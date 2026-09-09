@@ -32,8 +32,9 @@ from collectors.seo_pages import (
 from collectors.category_manager import (
     backfill_store_categories,category_stats
 )
+from collectors.activity import compute_activity_score
 
-app=FastAPI(title="Open Close Map API",version="1.7.0")
+app=FastAPI(title="Open Close Map API",version="1.9.0")
 
 FRONTEND_ORIGIN=os.getenv(
     "FRONTEND_ORIGIN",
@@ -239,7 +240,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.7.0",
+        "version":"1.9.0",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -570,6 +571,7 @@ def activity_score(store_id:int):
                 SELECT prefecture,city
                 FROM stores
                 WHERE id=%s
+                  AND COALESCE(status,'') <> 'excluded'
             """,(store_id,))
             base=cur.fetchone()
 
@@ -581,49 +583,41 @@ def activity_score(store_id:int):
             cur.execute("""
                 SELECT
                     COUNT(*),
-                    COUNT(*) FILTER(WHERE status IN('open','opening')),
-                    COUNT(*) FILTER(WHERE status IN('closed','closing'))
+                    COUNT(*) FILTER(
+                        WHERE status IN('open','opening')
+                          AND open_date IS NOT NULL
+                          AND open_date >= CURRENT_DATE - INTERVAL '365 days'
+                          AND open_date <= CURRENT_DATE
+                    ),
+                    COUNT(*) FILTER(
+                        WHERE status IN('closed','closing')
+                          AND close_date IS NOT NULL
+                          AND close_date >= CURRENT_DATE - INTERVAL '365 days'
+                          AND close_date <= CURRENT_DATE
+                    ),
+                    COUNT(*) FILTER(
+                        WHERE status='opening'
+                          AND open_date IS NOT NULL
+                          AND open_date > CURRENT_DATE
+                    ),
+                    COUNT(*) FILTER(
+                        WHERE status='closing'
+                          AND close_date IS NOT NULL
+                          AND close_date > CURRENT_DATE
+                    )
                 FROM stores
                 WHERE COALESCE(status,'') <> 'excluded'
                   AND COALESCE(prefecture,'')=COALESCE(%s,'')
                   AND COALESCE(city,'')=COALESCE(%s,'')
             """,(pref,city))
-            total,opening,closing=cur.fetchone()
+            total,recent_open,recent_close,planned_open,planned_close=cur.fetchone()
 
-    total=int(total or 0)
-    opening=int(opening or 0)
-    closing=int(closing or 0)
-
-    density=min(40,round(total/20*40)) if total else 0
-    open_ratio=(opening/total) if total else 0
-    momentum=min(35,round(open_ratio*45))
-    turnover=min(25,round((opening+closing)/20*25)) if total else 0
-    score=max(0,min(100,density+momentum+turnover))
-
-    if score>=80:
-        label="非常に活発"
-        comment="店舗の出入りが多く、商業動向が活発なエリアです。"
-    elif score>=65:
-        label="活発"
-        comment="新規出店や店舗入替が比較的多いエリアです。"
-    elif score>=50:
-        label="標準"
-        comment="一定の店舗動向が確認できるエリアです。"
-    else:
-        label="データ蓄積中"
-        comment="現時点では店舗情報が少なく、今後のデータ蓄積で評価が変わる可能性があります。"
-
-    return {
-        "score":score,
-        "label":label,
-        "comment":comment,
-        "breakdown":{
-            "store_density":density,
-            "opening_momentum":momentum,
-            "turnover_activity":turnover
-        },
-        "version":"activity-v1"
-    }
+    result=compute_activity_score(
+        total,recent_open,recent_close,planned_open,planned_close
+    )
+    result["prefecture"]=pref
+    result["city"]=city
+    return result
 
 # ---- Collection / enrichment ----
 
@@ -632,6 +626,112 @@ def public_categories():
     if not DATABASE_URL:
         return {"items":[]}
     return category_stats(DATABASE_URL)
+
+
+@app.get("/api/area-insights")
+def area_insights(
+    prefecture:str=Query(...,min_length=1),
+    city:Optional[str]=Query(default=None)
+):
+    conn=db_conn()
+    if conn is None:
+        raise HTTPException(503,"Database unavailable")
+
+    clauses=["COALESCE(status,'') <> 'excluded'","prefecture=%s"]
+    params=[prefecture]
+    if city:
+        clauses.append("city=%s")
+        params.append(city)
+    where=" AND ".join(clauses)
+
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                WITH months AS (
+                    SELECT generate_series(
+                        date_trunc('month',CURRENT_DATE)-INTERVAL '11 months',
+                        date_trunc('month',CURRENT_DATE),
+                        INTERVAL '1 month'
+                    )::date month_start
+                ),
+                oe AS (
+                    SELECT date_trunc('month',open_date)::date month_start,COUNT(*) cnt
+                    FROM stores
+                    WHERE {where}
+                      AND open_date IS NOT NULL
+                      AND open_date >= date_trunc('month',CURRENT_DATE)-INTERVAL '11 months'
+                      AND open_date < date_trunc('month',CURRENT_DATE)+INTERVAL '1 month'
+                    GROUP BY 1
+                ),
+                ce AS (
+                    SELECT date_trunc('month',close_date)::date month_start,COUNT(*) cnt
+                    FROM stores
+                    WHERE {where}
+                      AND close_date IS NOT NULL
+                      AND close_date >= date_trunc('month',CURRENT_DATE)-INTERVAL '11 months'
+                      AND close_date < date_trunc('month',CURRENT_DATE)+INTERVAL '1 month'
+                    GROUP BY 1
+                )
+                SELECT m.month_start,COALESCE(o.cnt,0),COALESCE(c.cnt,0)
+                FROM months m
+                LEFT JOIN oe o USING(month_start)
+                LEFT JOIN ce c USING(month_start)
+                ORDER BY m.month_start
+            """,params+params)
+            monthly=cur.fetchall()
+
+            cur.execute(f"""
+                SELECT
+                    COALESCE(NULLIF(category,''),'業種未分類'),
+                    COUNT(*) FILTER(
+                        WHERE open_date IS NOT NULL
+                          AND open_date>=CURRENT_DATE-INTERVAL '365 days'
+                          AND open_date<=CURRENT_DATE
+                    ),
+                    COUNT(*) FILTER(
+                        WHERE close_date IS NOT NULL
+                          AND close_date>=CURRENT_DATE-INTERVAL '365 days'
+                          AND close_date<=CURRENT_DATE
+                    )
+                FROM stores
+                WHERE {where}
+                GROUP BY 1
+                HAVING
+                    COUNT(*) FILTER(
+                        WHERE open_date IS NOT NULL
+                          AND open_date>=CURRENT_DATE-INTERVAL '365 days'
+                          AND open_date<=CURRENT_DATE
+                    )
+                    +
+                    COUNT(*) FILTER(
+                        WHERE close_date IS NOT NULL
+                          AND close_date>=CURRENT_DATE-INTERVAL '365 days'
+                          AND close_date<=CURRENT_DATE
+                    ) > 0
+                ORDER BY 2+3 DESC,1
+                LIMIT 20
+            """,params)
+            cats=cur.fetchall()
+
+    monthly_items=[
+        {"month":m.isoformat(),"open":int(o or 0),"close":int(c or 0),"net":int(o or 0)-int(c or 0)}
+        for m,o,c in monthly
+    ]
+    category_items=[
+        {"category":cat,"open":int(o or 0),"close":int(c or 0),"net":int(o or 0)-int(c or 0)}
+        for cat,o,c in cats
+    ]
+
+    return {
+        "prefecture":prefecture,
+        "city":city,
+        "period":"last_12_months",
+        "open":sum(x["open"] for x in monthly_items),
+        "close":sum(x["close"] for x in monthly_items),
+        "net":sum(x["net"] for x in monthly_items),
+        "monthly":monthly_items,
+        "categories":category_items
+    }
 
 
 # ---- Public SEO HTML pages ----

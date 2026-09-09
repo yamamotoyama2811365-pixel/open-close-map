@@ -4,6 +4,7 @@ import html
 import json
 from datetime import date, datetime
 from urllib.parse import quote, quote_plus
+from .activity import compute_activity_score
 
 SITE_NAME = "開店閉店マップ"
 
@@ -89,6 +90,39 @@ h1{font-size:clamp(28px,4vw,42px);line-height:1.3;letter-spacing:-.04em;margin:0
 .status-tab.closing:not(.active){color:#c34a4a}
 .status-tab.active.opening{background:#16825d;color:#fff}
 .status-tab.active.closing{background:#c34a4a;color:#fff}
+
+.insight-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0 20px}
+.insight-kpi{border:1px solid var(--line);border-radius:13px;padding:14px;background:#fbfcfd}
+.insight-kpi span{display:block;font-size:11px;color:var(--muted);margin-bottom:3px}
+.insight-kpi strong{font-size:24px;line-height:1.25;color:var(--navy)}
+.insight-kpi small{font-size:11px;color:var(--muted);margin-left:4px}
+.trend-label{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:800;margin-bottom:10px}
+.trend-label.up{background:var(--green-bg);color:var(--green)}
+.trend-label.down{background:var(--red-bg);color:var(--red)}
+.trend-label.flat{background:#eef2f6;color:#5c6877}
+.monthly-chart{display:grid;grid-template-columns:repeat(12,minmax(34px,1fr));gap:7px;align-items:end;height:190px;padding:18px 4px 4px;border-bottom:1px solid var(--line);margin-top:12px}
+.month-col{height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px;min-width:0}
+.month-bars{height:138px;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:3px}
+.month-bar{width:min(13px,42%);min-height:2px;border-radius:4px 4px 1px 1px}
+.month-bar.open{background:var(--green)}
+.month-bar.close{background:var(--red)}
+.month-name{font-size:9px;color:var(--muted);white-space:nowrap}
+.chart-legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-top:10px}
+.legend-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+.legend-dot.open{background:var(--green)}
+.legend-dot.close{background:var(--red)}
+.category-change-list{display:grid;gap:9px;margin-top:8px}
+.category-change{display:grid;grid-template-columns:minmax(100px,1.4fr) 70px 70px 72px;gap:8px;align-items:center;padding:11px 12px;border:1px solid var(--line);border-radius:12px}
+.category-change-name{font-size:13px;font-weight:800;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.category-change-num{text-align:right;font-size:12px;color:var(--muted)}
+.category-delta{text-align:right;font-weight:900;font-size:14px}
+.category-delta.up{color:var(--green)}
+.category-delta.down{color:var(--red)}
+.category-delta.flat{color:#697586}
+.category-head{display:grid;grid-template-columns:minmax(100px,1.4fr) 70px 70px 72px;gap:8px;padding:0 12px 4px;font-size:10px;color:var(--muted)}
+.category-head span:not(:first-child){text-align:right}
+.insight-note{font-size:11px;color:var(--muted);margin-top:12px;line-height:1.7}
+
 .footer{background:#101d2e;color:#c6d0dc;padding:34px 0;margin-top:20px;font-size:12px}
 .footer strong{display:block;color:white;font-size:17px;margin-bottom:6px}
 .footer-links{display:flex;gap:18px;flex-wrap:wrap;margin-top:13px}
@@ -101,6 +135,10 @@ h1{font-size:clamp(28px,4vw,42px);line-height:1.3;letter-spacing:-.04em;margin:0
   .wrap{width:min(100% - 22px,1160px)}.hero{padding:32px 0}.stats{grid-template-columns:1fr}
   .panel{padding:16px;border-radius:14px}.store-card{padding:13px}.section-head{display:block}.section-head p{margin-top:4px}
   .status-tabs{width:100%}.status-tab{flex:1}
+  .insight-summary{grid-template-columns:1fr 1fr 1fr;gap:6px}
+  .insight-kpi{padding:10px}.insight-kpi strong{font-size:18px}
+  .monthly-chart{gap:3px;height:170px;overflow-x:auto}
+  .category-change,.category-head{grid-template-columns:minmax(90px,1.4fr) 52px 52px 58px;gap:5px}
 }
 """
 
@@ -194,7 +232,18 @@ def page_shell(origin, title, description, canonical_path, body, json_ld=None, n
 <meta property="og:description" content="{esc(description)}">
 <meta property="og:url" content="{esc(canonical)}">
 <meta name="twitter:card" content="summary">
-<style>{CSS}</style>
+<style>{CSS}.activity-card{border:1px solid var(--line);border-radius:16px;padding:18px;background:linear-gradient(180deg,#fff,#f8fafc)}
+.activity-top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
+.activity-score{font-size:44px;line-height:1;font-weight:900;color:var(--navy)}
+.activity-score small{font-size:14px;font-weight:700;color:var(--muted)}
+.activity-label{font-size:15px;font-weight:900}
+.activity-meter{height:10px;background:#e9eef3;border-radius:999px;overflow:hidden;margin:14px 0}
+.activity-meter span{display:block;height:100%;background:#17263a;border-radius:999px}
+.activity-counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.activity-count{padding:10px;border-radius:10px;background:#fff;border:1px solid var(--line);text-align:center}
+.activity-count strong{display:block;font-size:18px}
+.activity-count span{font-size:11px;color:var(--muted)}
+</style>
 {json_ld_html}
 </head>
 <body>
@@ -331,6 +380,97 @@ def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40
                 facets = cur.fetchall()
                 facet_type = "city"
 
+            area_clauses = ["COALESCE(status,'') <> 'excluded'","prefecture=%s"]
+            area_params = [prefecture]
+            if city:
+                area_clauses.append("city=%s")
+                area_params.append(city)
+            area_where = " AND ".join(area_clauses)
+
+            cur.execute(f"""
+                WITH months AS (
+                    SELECT generate_series(
+                        date_trunc('month',CURRENT_DATE) - INTERVAL '11 months',
+                        date_trunc('month',CURRENT_DATE),
+                        INTERVAL '1 month'
+                    )::date AS month_start
+                ),
+                open_events AS (
+                    SELECT date_trunc('month',open_date)::date AS month_start,COUNT(*) AS cnt
+                    FROM stores
+                    WHERE {area_where}
+                      AND open_date IS NOT NULL
+                      AND open_date >= date_trunc('month',CURRENT_DATE) - INTERVAL '11 months'
+                      AND open_date < date_trunc('month',CURRENT_DATE) + INTERVAL '1 month'
+                    GROUP BY 1
+                ),
+                close_events AS (
+                    SELECT date_trunc('month',close_date)::date AS month_start,COUNT(*) AS cnt
+                    FROM stores
+                    WHERE {area_where}
+                      AND close_date IS NOT NULL
+                      AND close_date >= date_trunc('month',CURRENT_DATE) - INTERVAL '11 months'
+                      AND close_date < date_trunc('month',CURRENT_DATE) + INTERVAL '1 month'
+                    GROUP BY 1
+                )
+                SELECT
+                    m.month_start,
+                    COALESCE(o.cnt,0) AS opens,
+                    COALESCE(c.cnt,0) AS closes
+                FROM months m
+                LEFT JOIN open_events o USING(month_start)
+                LEFT JOIN close_events c USING(month_start)
+                ORDER BY m.month_start
+            """,area_params + area_params)
+            monthly_trend = cur.fetchall()
+
+            cur.execute(f"""
+                SELECT
+                    COALESCE(NULLIF(category,''),'業種未分類') AS category,
+                    COUNT(*) FILTER(
+                        WHERE open_date IS NOT NULL
+                          AND open_date >= CURRENT_DATE - INTERVAL '365 days'
+                          AND open_date <= CURRENT_DATE
+                    ) AS open_count,
+                    COUNT(*) FILTER(
+                        WHERE close_date IS NOT NULL
+                          AND close_date >= CURRENT_DATE - INTERVAL '365 days'
+                          AND close_date <= CURRENT_DATE
+                    ) AS close_count
+                FROM stores
+                WHERE {area_where}
+                GROUP BY 1
+                HAVING
+                    COUNT(*) FILTER(
+                        WHERE open_date IS NOT NULL
+                          AND open_date >= CURRENT_DATE - INTERVAL '365 days'
+                          AND open_date <= CURRENT_DATE
+                    )
+                    +
+                    COUNT(*) FILTER(
+                        WHERE close_date IS NOT NULL
+                          AND close_date >= CURRENT_DATE - INTERVAL '365 days'
+                          AND close_date <= CURRENT_DATE
+                    ) > 0
+                ORDER BY
+                    (
+                        COUNT(*) FILTER(
+                            WHERE open_date IS NOT NULL
+                              AND open_date >= CURRENT_DATE - INTERVAL '365 days'
+                              AND open_date <= CURRENT_DATE
+                        )
+                        +
+                        COUNT(*) FILTER(
+                            WHERE close_date IS NOT NULL
+                              AND close_date >= CURRENT_DATE - INTERVAL '365 days'
+                              AND close_date <= CURRENT_DATE
+                        )
+                    ) DESC,
+                    category
+                LIMIT 10
+            """,area_params)
+            category_changes = cur.fetchall()
+
     area_name = f"{prefecture}{city or ''}"
     if city:
         title = f"{city}の開店・閉店情報｜最新店舗一覧｜{SITE_NAME}"
@@ -384,6 +524,121 @@ def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40
     if offset + len(rows) < total:
         prev_next.append(f'<a href="{page_href(page+1)}">次へ ›</a>')
 
+    open_12m = sum(int(r[1] or 0) for r in monthly_trend)
+    close_12m = sum(int(r[2] or 0) for r in monthly_trend)
+    net_12m = open_12m - close_12m
+    observed_12m = open_12m + close_12m
+
+    if observed_12m < 5:
+        trend_text = "データ蓄積中"
+        trend_class = "flat"
+        trend_copy = "直近12か月のイベント件数がまだ少ないため、傾向は参考値です。"
+    elif net_12m >= max(2,round(observed_12m * 0.12)):
+        trend_text = "開店優勢"
+        trend_class = "up"
+        trend_copy = "直近12か月では、閉店より開店の確認件数が多い傾向です。"
+    elif net_12m <= -max(2,round(observed_12m * 0.12)):
+        trend_text = "閉店優勢"
+        trend_class = "down"
+        trend_copy = "直近12か月では、開店より閉店の確認件数が多い傾向です。"
+    else:
+        trend_text = "ほぼ均衡"
+        trend_class = "flat"
+        trend_copy = "直近12か月の開店・閉店件数は、おおむね均衡しています。"
+
+    max_month = max(
+        [int(r[1] or 0) for r in monthly_trend]
+        + [int(r[2] or 0) for r in monthly_trend]
+        + [1]
+    )
+
+    month_cols=[]
+    for month_start,mopen,mclose in monthly_trend:
+        mopen=int(mopen or 0)
+        mclose=int(mclose or 0)
+        oh=max(2,round((mopen/max_month)*128)) if mopen else 2
+        ch=max(2,round((mclose/max_month)*128)) if mclose else 2
+        month_cols.append(f"""
+          <div class="month-col" title="{month_start.year}年{month_start.month}月 開店{mopen}件 / 閉店{mclose}件">
+            <div class="month-bars">
+              <span class="month-bar open" style="height:{oh}px;opacity:{'1' if mopen else '.18'}"></span>
+              <span class="month-bar close" style="height:{ch}px;opacity:{'1' if mclose else '.18'}"></span>
+            </div>
+            <span class="month-name">{month_start.month}月</span>
+          </div>
+        """)
+
+    category_rows=[]
+    excluded_categories={"業種未分類","未分類","小売","飲食店"}
+    for cat,copen,cclose in category_changes:
+        if not cat or cat in excluded_categories:
+            continue
+        copen=int(copen or 0)
+        cclose=int(cclose or 0)
+        delta=copen-cclose
+        delta_class="up" if delta>0 else "down" if delta<0 else "flat"
+        delta_text=f"+{delta}" if delta>0 else str(delta)
+        category_rows.append(f"""
+          <div class="category-change">
+            <div class="category-change-name">{esc(cat)}</div>
+            <div class="category-change-num">{copen}件</div>
+            <div class="category-change-num">{cclose}件</div>
+            <div class="category-delta {delta_class}">{delta_text}</div>
+          </div>
+        """)
+        if len(category_rows)>=8:
+            break
+
+    scope_word = "この街" if city else "このエリア"
+    insight_html=f"""
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>{scope_word}の開店・閉店傾向</h2>
+          <p>直近12か月の掲載データ</p>
+        </div>
+      </div>
+
+      <span class="trend-label {trend_class}">{trend_text}</span>
+      <p class="side-copy" style="margin:0 0 12px">{trend_copy}</p>
+
+      <div class="insight-summary">
+        <div class="insight-kpi"><span>直近12か月の開店</span><strong>{open_12m}</strong><small>件</small></div>
+        <div class="insight-kpi"><span>直近12か月の閉店</span><strong>{close_12m}</strong><small>件</small></div>
+        <div class="insight-kpi"><span>開店 − 閉店</span><strong>{'+' if net_12m>0 else ''}{net_12m}</strong><small>件</small></div>
+      </div>
+
+      <div class="monthly-chart">{''.join(month_cols)}</div>
+      <div class="chart-legend">
+        <span><i class="legend-dot open"></i>開店</span>
+        <span><i class="legend-dot close"></i>閉店</span>
+      </div>
+
+      <div class="insight-note">
+        ※ 開店閉店マップに登録された日付情報から算出した参考値です。実際の地域内すべての店舗数や景況を示すものではありません。
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <div><h2>業種別増減</h2><p>直近1年の「開店件数 − 閉店件数」</p></div>
+      </div>
+
+      {
+        (
+          '<div class="category-head"><span>業種</span><span>開店</span><span>閉店</span><span>増減</span></div>'
+          + '<div class="category-change-list">' + ''.join(category_rows) + '</div>'
+        )
+        if category_rows
+        else '<div class="empty">業種別の増減を表示できるデータを蓄積中です。</div>'
+      }
+
+      <div class="insight-note">
+        ※ 「増減」は在庫店舗数そのものではなく、直近1年間に確認できた開店件数から閉店件数を引いた値です。
+      </div>
+    </section>
+    """
+
     body = f"""
 <section class="hero">
   <div class="wrap">
@@ -399,6 +654,7 @@ def render_area(database_url, origin, prefecture, city=None, page=1, per_page=40
 </section>
 <div class="wrap layout">
   <main>
+    {insight_html}
     <section class="panel">
       <div class="section-head">
         <div><h2>{
@@ -624,6 +880,40 @@ def render_store(database_url, origin, store_id):
                 """,(d["address"],))
                 history=cur.fetchall()
 
+            cur.execute("""
+                SELECT
+                    COUNT(*),
+                    COUNT(*) FILTER(
+                        WHERE status IN('open','opening')
+                          AND open_date IS NOT NULL
+                          AND open_date >= CURRENT_DATE - INTERVAL '365 days'
+                          AND open_date <= CURRENT_DATE
+                    ),
+                    COUNT(*) FILTER(
+                        WHERE status IN('closed','closing')
+                          AND close_date IS NOT NULL
+                          AND close_date >= CURRENT_DATE - INTERVAL '365 days'
+                          AND close_date <= CURRENT_DATE
+                    ),
+                    COUNT(*) FILTER(
+                        WHERE status='opening'
+                          AND open_date IS NOT NULL
+                          AND open_date > CURRENT_DATE
+                    ),
+                    COUNT(*) FILTER(
+                        WHERE status='closing'
+                          AND close_date IS NOT NULL
+                          AND close_date > CURRENT_DATE
+                    )
+                FROM stores
+                WHERE COALESCE(status,'') <> 'excluded'
+                  AND COALESCE(prefecture,'')=COALESCE(%s,'')
+                  AND COALESCE(city,'')=COALESCE(%s,'')
+            """,(d["prefecture"],d["city"]))
+            activity_row=cur.fetchone()
+
+    activity=compute_activity_score(*(activity_row or (0,0,0,0,0)))
+
     ev=event_date(d)
     label,cls=status_info(d["status"],ev)
     area="".join(x for x in [d["prefecture"],d["city"]] if x)
@@ -714,6 +1004,25 @@ def render_store(database_url, origin, store_id):
     elif d["address"]:
         history_html='<div class="empty">この住所では、現在ほかの店舗履歴を確認できていません。</div>'
 
+    activity_html=f"""
+    <div class="activity-card">
+      <div class="activity-top">
+        <div>
+          <div class="activity-label">{esc(activity["label"])}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:5px">{esc(activity["comment"])}</div>
+        </div>
+        <div class="activity-score">{activity["score"]}<small>/100</small></div>
+      </div>
+      <div class="activity-meter"><span style="width:{activity["score"]}%"></span></div>
+      <div class="activity-counts">
+        <div class="activity-count"><strong>{activity["counts"]["recent_open"]}</strong><span>直近1年の開店</span></div>
+        <div class="activity-count"><strong>{activity["counts"]["recent_close"]}</strong><span>直近1年の閉店</span></div>
+        <div class="activity-count"><strong>{activity["counts"]["planned_open"]}</strong><span>今後の開店予定</span></div>
+        <div class="activity-count"><strong>{activity["counts"]["planned_close"]}</strong><span>今後の閉店予定</span></div>
+      </div>
+    </div>
+    """
+
     area_links=[]
     if d["prefecture"]:
         area_links.append(f'<a class="facet" href="/area/{qpath(d["prefecture"])}">{esc(d["prefecture"])}</a>')
@@ -740,6 +1049,12 @@ def render_store(database_url, origin, store_id):
       {map_html}
       {google_maps_html}
       <div class="notice">掲載内容は確認時点の情報です。営業状況・開閉店日などは変更される場合があるため、必要に応じて公式情報・掲載元をご確認ください。</div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head"><div><h2>周辺活力度</h2><p>{esc(area)}の開店・閉店動向から算出</p></div></div>
+      {activity_html}
+      <div class="notice">この指標は人流・売上・通行量を示すものではありません。開店閉店マップに蓄積された店舗の開店・閉店情報をもとにした参考値です。データ量により数値は変動します。</div>
     </section>
 
     <section class="panel">
