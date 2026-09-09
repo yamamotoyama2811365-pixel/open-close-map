@@ -56,7 +56,6 @@ HUB_SOURCES = [
         "status":"opening",
         "urls":[
             "https://www.shopship.jp/open-close/category/shop-open/",
-            "https://www.shopship.jp/sapporo/open-close/",
         ],
         "allowed_domains":["shopship.jp","www.shopship.jp"],
         "confidence":82,
@@ -69,7 +68,6 @@ HUB_SOURCES = [
         "status":"closing",
         "urls":[
             "https://www.shopship.jp/open-close/category/shop-close/",
-            "https://www.shopship.jp/sapporo/open-close/?open-close_category=shop-close",
         ],
         "allowed_domains":["shopship.jp","www.shopship.jp"],
         "confidence":82,

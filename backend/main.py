@@ -36,8 +36,11 @@ from collectors.category_manager import (
     backfill_store_categories,category_stats
 )
 from collectors.activity import compute_activity_score
+from collectors.prefecture_closing import (
+    collect_prefecture_closings,get_prefecture_coverage
+)
 
-app=FastAPI(title="Open Close Map API",version="1.13.0")
+app=FastAPI(title="Open Close Map API",version="1.14.0")
 
 FRONTEND_ORIGIN=os.getenv(
     "FRONTEND_ORIGIN",
@@ -271,7 +274,7 @@ def root():
     return {
         "service":"open-close-map-api",
         "status":"ok",
-        "version":"1.13.0",
+        "version":"1.14.0",
         "time":datetime.now(timezone.utc).isoformat()
     }
 
@@ -1244,9 +1247,10 @@ def full_cycle():
     Hourly low-cost cycle:
     1) dedicated open/close sources + one backfill page
     2) diversified 18-source RSS discovery
-    3) detail enrichment/promotion
-    4) category repair
-    5) closed-store tenant watch + listing recheck
+    3) rotating prefecture-by-prefecture closing discovery
+    4) detail enrichment/promotion
+    5) category repair
+    6) closed-store tenant watch + listing recheck
     """
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
@@ -1255,6 +1259,12 @@ def full_cycle():
     backfill=collect_backfill_step(DATABASE_URL)
 
     rss=run_collectors(DATABASE_URL,include_hub=False)
+
+    # Closing-heavy regional rotation: eight prefectures per run.
+    # This prevents opening-heavy feeds from dominating national coverage.
+    prefecture_closing=collect_prefecture_closings(
+        DATABASE_URL,batch_size=8,limit_per_prefecture=18
+    )
 
     source_health_log=record_cycle_source_runs(
         DATABASE_URL,
@@ -1296,6 +1306,7 @@ def full_cycle():
             "processed":hub_processed
         },
         "rss":rss,
+        "prefecture_closing":prefecture_closing,
         "source_health_log":source_health_log,
         "rss_processed":rss_processed,
         "category_repair":category_repair,
@@ -1359,6 +1370,33 @@ def hub_cycle():
         "enriched":enriched,
         "processed":processed,
         "category_repair":category_repair
+    }
+
+@app.post("/api/collect-prefecture-closings",dependencies=[Depends(require_admin)])
+def collect_prefecture_closings_api(
+    batch_size:int=Query(default=8,ge=1,le=47),
+    limit_per_prefecture:int=Query(default=18,ge=5,le=50)
+):
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+
+    return {
+        "ok":True,
+        **collect_prefecture_closings(
+            DATABASE_URL,
+            batch_size=batch_size,
+            limit_per_prefecture=limit_per_prefecture
+        )
+    }
+
+@app.get("/api/prefecture-coverage",dependencies=[Depends(require_admin)])
+def prefecture_coverage():
+    if not DATABASE_URL:
+        return {"ok":False,"error":"DATABASE_URL is not configured"}
+
+    return {
+        "ok":True,
+        **get_prefecture_coverage(DATABASE_URL)
     }
 
 @app.get("/api/source-health",dependencies=[Depends(require_admin)])
