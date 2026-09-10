@@ -74,4 +74,14 @@ document.addEventListener('click',e=>{
   window.gaEvent(eventName,params);
 });
 
+function loadAffiliateAds(){
+  if(document.querySelector('script[data-a8-affiliate]'))return;
+  const s=document.createElement('script');
+  s.src='/affiliate-ads.js';
+  s.defer=true;
+  s.dataset.a8Affiliate='1';
+  document.head.appendChild(s);
+}
+
 initAnalytics();
+loadAffiliateAds();
