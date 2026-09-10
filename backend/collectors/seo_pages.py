@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .public_quality import public_store
 
 import html
 import json
@@ -232,14 +233,14 @@ def status_info(status, event=None):
     return "店舗情報", "opening"
 
 def row_to_dict(r):
-    return {
+    return public_store({
         "id":r[0],"name":r[1],"status":r[2],"category":r[3],
         "prefecture":r[4],"city":r[5],"address":r[6],
         "facility_name":r[7],"floor":r[8],"postal_code":r[9],
         "open_date":r[10],"close_date":r[11],
         "source_url":r[12],"source_name":r[13],"official_url":r[14],
         "confidence":r[15],"last_verified_at":r[16]
-    }
+    })
 
 STORE_SELECT = """
     SELECT
@@ -296,7 +297,7 @@ def page_shell(origin, title, description, canonical_path, body, json_ld=None, n
     <strong>{SITE_NAME}</strong>
     全国の開店・閉店・店舗情報をエリア・業種ごとに確認できる店舗情報データベースです。
     <div class="footer-links">
-      <a href="/">トップ</a><a href="/area/北海道">エリア</a><a href="/category/飲食">業種</a>
+      <a href="/">トップ</a><a href="/area/北海道">エリア</a><a href="/category/飲食">業種</a><a href="/about.html">運営・編集方針</a><a href="/privacy.html">プライバシー</a><a href="/contact.html">お問い合わせ・訂正</a>
     </div>
   </div>
 </footer>
@@ -1180,6 +1181,7 @@ def render_store(database_url, origin, store_id):
   <main>
     <section class="panel">
       <div class="section-head"><div><h2>店舗情報</h2><p>{esc(d["name"])}</p></div></div>
+      {'<p class="notice">店舗名の抽出結果を確認中です。業種・開閉店日などの断定表示を停止しています。掲載元をご確認ください。</p>' if d.get("quality_pending") else ""}
       <dl class="detail-grid">{detail_html}</dl>
       {links}
       {map_html}
@@ -1240,7 +1242,7 @@ def render_store(database_url, origin, store_id):
         }
       ]
     }
-    return page_shell(origin,title,desc,canonical_path,body,ld)
+    return page_shell(origin,title,desc,canonical_path,body,ld,noindex=d.get("quality_pending",False))
 
 def sitemap_xml(database_url, origin, max_urls=45000):
     urls=[origin.rstrip("/")+"/"]
@@ -1298,3 +1300,4 @@ def robots_txt(origin):
         "Disallow: /api/\n"
         f"Sitemap: {origin.rstrip('/')}/sitemap.xml\n"
     )
+

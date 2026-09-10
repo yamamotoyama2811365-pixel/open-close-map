@@ -1,3 +1,4 @@
+from .public_quality import valid_floor, valid_facility
 import re
 from datetime import date
 
@@ -187,13 +188,12 @@ def extract_postal_code(text):
     return f"{m.group(1)}-{m.group(2)}" if m else None
 
 def extract_floor(text):
-    t=text or ""
-    for p in [
-        r'((?:地下|B|Ｂ)\s*\d{1,2}\s*(?:階|F|Ｆ))',
-        r'(\d{1,2}\s*(?:階|F|Ｆ))'
-    ]:
-        m=re.search(p,t,re.I)
-        if m:return re.sub(r'\s+','',m.group(1))
+    import unicodedata
+    t=unicodedata.normalize("NFKC", text or "")
+    for match in re.finditer(r'(?<![0-9A-Za-z])((?:地下|B)?\s*[1-9][0-9]?\s*(?:階|F))(?![0-9A-Za-z])',t,re.I):
+        value=valid_floor(match.group(1))
+        if value:
+            return value
     return None
 
 def _label_value(text, labels):
@@ -466,7 +466,7 @@ def extract_facility_name(text, address=None):
         return None
     if len(vv) < 2:
         return None
-    return vv
+    return valid_facility(vv)
 
 STORE_NAME_HINTS = [
     "店","カフェ","レストラン","食堂","ホテル","ショップ","ストア","サロン",
@@ -707,3 +707,4 @@ def exact_event_date_from_text(text, status):
                 pass
 
     return None
+

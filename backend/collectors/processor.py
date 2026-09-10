@@ -1,3 +1,4 @@
+from .public_quality import valid_store_name, valid_facility, valid_floor
 from .article_enricher import fetch_article_facts
 from .text_rules import calculate_confidence,is_likely_non_store_event
 
@@ -140,6 +141,11 @@ def promote_candidates(database_url,min_confidence=80,enrich_limit=40):
                     skipped+=1
                     continue
 
+                if not valid_store_name(name):
+                    skipped += 1
+                    continue
+                facility = valid_facility(facility)
+                floor = valid_floor(floor)
                 status="opening" if ds=="opening" else "closing"
                 od=event if status=="opening" else None
                 cd=event if status=="closing" else None
@@ -185,3 +191,4 @@ def promote_candidates(database_url,min_confidence=80,enrich_limit=40):
                 promoted+=1
 
     return {"promoted":promoted,"skipped":skipped,"min_confidence":min_confidence}
+

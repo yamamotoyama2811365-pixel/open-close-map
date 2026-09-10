@@ -1,3 +1,4 @@
+from collectors.public_quality import public_store
 import os
 import hmac
 from datetime import datetime, timezone
@@ -402,7 +403,7 @@ def stores(
             rows=cur.fetchall()
 
     return {
-        "items":[{
+        "items":[public_store({
             "id":r[0],"name":r[1],"status":r[2],"category":r[3],
             "prefecture":r[4],"city":r[5],"address":r[6],
             "facility_name":r[7],"floor":r[8],"postal_code":r[9],
@@ -411,7 +412,7 @@ def stores(
             "source_url":r[12],"source_name":r[13],"official_url":r[14],
             "confidence":r[15],
             "last_verified_at":r[16].isoformat() if r[16] else None
-        } for r in rows],
+        }) for r in rows],
         "count":len(rows)
     }
 
@@ -437,7 +438,7 @@ def store(store_id:int):
     if not r:
         raise HTTPException(404,"Store not found")
 
-    return {
+    return public_store({
         "id":r[0],"name":r[1],"status":r[2],"category":r[3],
         "prefecture":r[4],"city":r[5],"address":r[6],
         "facility_name":r[7],"floor":r[8],"postal_code":r[9],
@@ -446,7 +447,7 @@ def store(store_id:int):
         "source_url":r[12],"source_name":r[13],"official_url":r[14],
         "confidence":r[15],
         "last_verified_at":r[16].isoformat() if r[16] else None
-    }
+    })
 
 # ---- Restored detail-page APIs ----
 
@@ -483,10 +484,10 @@ def nearby(store_id:int,limit:int=Query(default=6,ge=1,le=20)):
             rows=cur.fetchall()
 
     return {
-        "items":[{
+        "items":[public_store({
             "id":r[0],"name":r[1],"status":r[2],
             "category":r[3],"facility_name":r[4]
-        } for r in rows]
+        }) for r in rows]
     }
 
 @app.get("/api/stores/{store_id}/tenant")
@@ -1474,3 +1475,8 @@ def backfill_status():
     if not DATABASE_URL:
         return {"ok":False,"error":"DATABASE_URL is not configured"}
     return {"ok":True,**get_backfill_status(DATABASE_URL)}
+
+
+# Public correction form with an authenticated operator inbox.
+from inquiries import install_inquiries
+install_inquiries(app, db_conn, require_admin)
