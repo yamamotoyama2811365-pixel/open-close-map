@@ -1,0 +1,47 @@
+{
+  "site": "https://open-close-map.onrender.com/",
+  "implementation_commit": "d08b5cf4d607ea5ab0b6bde2ce12896bc2304c57",
+  "source": "HYPD lp_audit_instant, browserPreset=mobile",
+  "before": {
+    "fetched_at_utc": "2026-09-10T14:00:17Z",
+    "status_code": 200,
+    "title": "開店閉店マップ｜全国の開店・閉店情報",
+    "internal_links_count": 7,
+    "largest_contentful_paint_ms": 4284,
+    "cumulative_layout_shift": 0.03802527070198506
+  },
+  "after": {
+    "fetched_at_utc": "2026-09-10T14:19:05Z",
+    "status_code": 200,
+    "title": "開店閉店マップ｜全国の新規オープン・閉店情報",
+    "canonical": "https://open-close-map.onrender.com/",
+    "internal_links_count": 64,
+    "social_media_tags_detected": true,
+    "largest_contentful_paint_ms": 1988,
+    "cumulative_layout_shift": 0.03768575935643162,
+    "broken_links_reported": false,
+    "broken_resources_reported": true,
+    "resource_parser_error_reported": true,
+    "resource_error_cause_verified": false
+  },
+  "destination_check": {
+    "url": "https://open-close-map.onrender.com/area/%E5%8C%97%E6%B5%B7%E9%81%93",
+    "fetched_at_utc": "2026-09-10T14:20:09Z",
+    "status_code": 200,
+    "title": "北海道の開店・閉店情報｜新店・閉店一覧｜開店閉店マップ",
+    "internal_links_count": 80,
+    "duplicate_visible_store_names": ["ノースコンチネント 赤レンガ店", "INDEX SAPPORO", "中華 桃園", "日本茶カフェpocha"],
+    "duplicate_note": "同名の別イベントか重複収集かは未調査。自動統合・削除は行っていない。"
+  },
+  "interpretation": {
+    "live_homepage_release_verified": true,
+    "note": "リンク数は同じ外部検査ツールで観測した値。検索登録数・順位・流入数ではない。",
+    "performance_note": "各1回のラボ測定。広告・画像・ネットワーク条件の差があり、速度差を今回の変更の因果効果とは断定しない。実ユーザーのCore Web Vitalsではない。",
+    "ga4_report_status": "authorization_expired_or_revoked",
+    "current_monthly_pv": null,
+    "search_console_indexing_status": "not_verified",
+    "target_monthly_pv": 10000,
+    "target_achieved": "not_verified",
+    "automated_continuous_monitoring_added": false
+  }
+}
