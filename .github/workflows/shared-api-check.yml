@@ -62,3 +62,27 @@ jobs:
                   raise RuntimeError("Private inbox was not protected")
           print("VERIFIED: same store data, shared database ready, public APIs, SEO HTML, CORS and scoped GitHub identity.")
           print("No collection, inquiry creation or private inbox access performed.")
+
+      - name: Confirm the deployed frontend uses the shared API
+        shell: python
+        run: |
+          import time, urllib.request, json
+          front="https://open-close-map.onrender.com"
+          shared="https://buzz-now-1.onrender.com"
+          files=["/app.js","/detail.js","/analytics.js","/status-page.js","/contact.html"]
+          for attempt in range(25):
+              try:
+                  for path in files:
+                      with urllib.request.urlopen(front+path+"?verify=shared-20260910",timeout=30) as r:
+                          content=r.read().decode()
+                      assert shared+"/open-close" in content, path
+                      assert "https://open-close-map-api.onrender.com" not in content, path
+                  with urllib.request.urlopen(front,timeout=30) as r:
+                      assert r.status==200 and "shared-20260910" in r.read().decode()
+                  with urllib.request.urlopen(shared+"/ready",timeout=30) as r:
+                      assert json.load(r)["database"]=="ok"
+                  break
+              except Exception:
+                  if attempt==24: raise
+                  time.sleep(10)
+          print("VERIFIED: five public client files use the shared API; both sites are available.")
