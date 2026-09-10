@@ -86,3 +86,36 @@ jobs:
                   if attempt==24: raise
                   time.sleep(10)
           print("VERIFIED: five public client files use the shared API; both sites are available.")
+
+      - name: Verify public SEO routes after rewrite cutover
+        shell: python
+        run: |
+          import json, os, urllib.request, urllib.parse, xml.etree.ElementTree as ET
+          front="https://open-close-map.onrender.com"
+          base="https://buzz-now-1.onrender.com/open-close"
+          probe="rewrite-"+os.environ["GITHUB_RUN_ID"]
+          def get(url):
+              with urllib.request.urlopen(url,timeout=60) as r:
+                  assert r.status==200
+                  return r.read().decode()
+          stores=json.loads(get(base+"/api/stores?limit=1"))["items"]
+          sid=stores[0]["id"]
+          sitemap=get(front+"/sitemap.xml?migration_probe="+probe)
+          root=ET.fromstring(sitemap)
+          urls=[e.text for e in root.iter() if e.tag.endswith("}loc")]
+          assert urls and all(u.startswith(front+"/") for u in urls)
+          paths=[f"/store/{sid}"]
+          for prefix in ["/area/","/category/"]:
+              match=next((u for u in urls if u.startswith(front+prefix)),None)
+              assert match, prefix
+              paths.append(match[len(front):])
+          for path in paths:
+              url=front+urllib.parse.quote(urllib.parse.unquote(path),safe="/")
+              html=get(url+"?migration_probe="+probe)
+              assert "<html" in html.lower() and "canonical" in html.lower()
+              assert front in html
+              print("VERIFIED public SEO:",path)
+          robots=get(front+"/robots.txt?migration_probe="+probe)
+          assert front+"/sitemap.xml" in robots
+          print("VERIFIED sitemap URLs:",len(urls))
+          print("ORIGIN_PROBE:",probe)
