@@ -1,5 +1,5 @@
 
-const API='https://open-close-map-api.onrender.com';
+const API='https://buzz-now-1.onrender.com/open-close';
 const esc=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 const fallbackMap={'ラーメン':'assets/ramen.png','カフェ':'assets/cafe.png','居酒屋':'assets/izakaya.png','焼肉':'assets/yakiniku.png','美容':'assets/beauty.png','コンビニ':'assets/convenience.png','テナント':'assets/tenant.png'};
 const label=s=>({opening:'開店予定',open:'OPEN',closing:'閉店予定',closed:'閉店',tenant:'テナント'}[s]||s||'店舗情報');

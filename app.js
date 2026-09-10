@@ -1,4 +1,4 @@
-const API='https://open-close-map-api.onrender.com';
+const API='https://buzz-now-1.onrender.com/open-close';
 const $=id=>document.getElementById(id);
 
 const esc=s=>String(s??'')

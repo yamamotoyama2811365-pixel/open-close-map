@@ -1,4 +1,4 @@
-const ANALYTICS_API='https://open-close-map-api.onrender.com';
+const ANALYTICS_API='https://buzz-now-1.onrender.com/open-close';
 const DEFAULT_GA_MEASUREMENT_ID='G-ZB4T13GM5P';
 
 window.dataLayer=window.dataLayer||[];

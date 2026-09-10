@@ -1,4 +1,4 @@
-const STATUS_API='https://open-close-map-api.onrender.com';
+const STATUS_API='https://buzz-now-1.onrender.com/open-close';
 const pageMode=document.body.dataset.statusPage||'opening';
 const isOpening=pageMode==='opening';
 const allowed=isOpening?new Set(['opening','open']):new Set(['closing','closed']);
