@@ -1,0 +1,41 @@
+/* SEO status landing pages */
+.brand-wrap{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:12px;align-items:center;min-width:410px;position:relative}
+.jp-brand-logo{grid-column:1;grid-row:1 / span 2;display:flex;align-items:center;line-height:1;white-space:nowrap;font-weight:950;letter-spacing:-.07em}
+.jp-brand-pin{width:34px;height:34px;margin-right:7px;border-radius:11px 11px 15px 11px;display:grid;place-items:center;background:linear-gradient(145deg,#59cc66,#24a949);color:#fff;font-size:19px;transform:rotate(-4deg);box-shadow:0 6px 14px rgba(32,157,70,.18)}
+.jp-brand-open,.jp-brand-close,.jp-brand-map{display:inline-block;font-size:31px;font-weight:950;letter-spacing:-.08em}
+.jp-brand-open{color:#20ad49}.jp-brand-close{color:#f23f69;margin-left:3px}.jp-brand-map{color:#11182f;font-size:24px;margin-left:5px;letter-spacing:-.06em}
+.brand-english{grid-column:2;grid-row:1;align-self:end;color:#11182f;font-size:9px;line-height:1.1;font-weight:900;letter-spacing:.22em;text-transform:uppercase}
+.brand-sub{grid-column:2;grid-row:2;align-self:start;margin-top:4px;max-width:175px;color:#536078;font-size:8px;line-height:1.45;letter-spacing:.02em}
+.footer-seo-links{display:flex!important;flex-direction:row!important;gap:12px!important;align-items:center;font-size:9px;font-weight:800}
+.footer-seo-links a{color:#56657b}
+.status-page-shell{max-width:1240px;margin:36px auto 80px;padding:0 24px}
+.status-page-hero{position:relative;overflow:hidden;border-radius:30px;padding:48px 46px;background:linear-gradient(135deg,#fff 0%,#f3fbff 52%,#e9f9ff 100%);border:1px solid #e7eef5;box-shadow:var(--shadow)}
+.status-page-hero.open::after,.status-page-hero.close::after{content:"";position:absolute;width:270px;height:270px;border-radius:50%;right:-70px;top:-95px;opacity:.18}
+.status-page-hero.open::after{background:var(--green)}
+.status-page-hero.close::after{background:var(--pink)}
+.status-kicker{font-size:10px;font-weight:900;letter-spacing:.16em;color:#438fdd}
+.status-page-hero h1{font-size:clamp(38px,5vw,64px);letter-spacing:-.05em;line-height:1.08;margin:10px 0 12px}
+.status-page-hero p{max-width:760px;margin:0;color:#5d6b7e;font-size:14px;line-height:1.8;font-weight:650}
+.status-page-count{display:inline-flex;align-items:baseline;gap:6px;margin-top:20px;padding:10px 14px;border-radius:999px;background:#fff;border:1px solid #e4ebf2;box-shadow:0 8px 22px rgba(55,86,110,.07);font-size:11px;color:#667489}
+.status-page-count strong{font-size:24px;color:var(--ink)}
+.status-page-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(330px,.65fr);gap:20px;margin-top:22px}
+.status-panel{background:#fff;border:1px solid #e6edf4;border-radius:22px;padding:24px;box-shadow:0 12px 34px rgba(56,83,107,.06)}
+.status-panel h2{margin:0 0 6px;font-size:22px;letter-spacing:-.035em}
+.status-panel-copy{margin:0 0 16px;color:#7c899a;font-size:11px;line-height:1.7}
+.prefecture-seo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.prefecture-seo-grid a{min-height:42px;display:flex;align-items:center;justify-content:space-between;padding:0 11px;border:1px solid #e8eef4;border-radius:11px;background:#fbfdff;font-size:10px;font-weight:800;color:#344258}
+.prefecture-seo-grid a:hover{background:#f2faff;border-color:#bedcf5;transform:translateY(-1px)}
+.status-latest-list{display:grid;gap:8px}
+.status-latest-item{display:grid;grid-template-columns:58px minmax(0,1fr) auto;gap:10px;align-items:center;padding:11px 12px;border:1px solid #e8eef4;border-radius:13px;background:#fbfdff}
+.status-latest-item .mini-badge{display:inline-flex;justify-content:center;padding:4px 6px;border-radius:999px;color:#fff;font-size:8px;font-weight:900}
+.status-latest-item .mini-badge.open{background:var(--green)}
+.status-latest-item .mini-badge.close{background:var(--pink)}
+.status-latest-item strong{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.status-latest-item small{font-size:9px;color:#8793a4;white-space:nowrap}
+.status-page-note{margin-top:20px;padding:16px 18px;border-radius:16px;background:#f7fafc;color:#7a8798;font-size:10px;line-height:1.8}
+.status-switch{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.status-switch a{padding:9px 13px;border-radius:999px;background:#fff;border:1px solid #e4ebf2;font-size:10px;font-weight:900}
+.status-switch a.open{color:#23994a}.status-switch a.close{color:#d94263}
+@media(max-width:1100px){.brand-wrap{min-width:350px}}
+@media(max-width:850px){.brand-wrap{min-width:0;grid-template-columns:auto 1fr}.status-page-grid{grid-template-columns:1fr}.prefecture-seo-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.jp-brand-open,.jp-brand-close{font-size:25px}.jp-brand-map{font-size:19px}.jp-brand-pin{width:29px;height:29px;font-size:16px}.brand-english{font-size:8px}.brand-sub{font-size:7px;max-width:130px}.status-page-shell{padding:0 14px;margin-top:20px}.status-page-hero{padding:32px 22px;border-radius:24px}.prefecture-seo-grid{grid-template-columns:1fr 1fr}.status-panel{padding:18px}.status-latest-item{grid-template-columns:52px minmax(0,1fr)}.status-latest-item small{display:none}.footer-seo-links{display:none!important}}
