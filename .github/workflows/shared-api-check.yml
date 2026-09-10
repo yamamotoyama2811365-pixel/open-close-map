@@ -119,3 +119,18 @@ jobs:
           assert front+"/sitemap.xml" in robots
           print("VERIFIED sitemap URLs:",len(urls))
           print("ORIGIN_PROBE:",probe)
+
+      - name: Confirm manual admin configuration after deployment
+        shell: python
+        run: |
+          import json, time, urllib.request
+          base="https://buzz-now-1.onrender.com/open-close"
+          for attempt in range(30):
+              with urllib.request.urlopen(base+"/health",timeout=30) as r:
+                  health=json.load(r)
+              if health.get("admin_key_configured") is True:
+                  break
+              if attempt==29:
+                  raise RuntimeError("Manual admin key is not configured")
+              time.sleep(10)
+          print("VERIFIED: manual admin key is configured; its value was not accessed.")
