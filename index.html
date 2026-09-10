@@ -7,17 +7,29 @@
   <meta name="description" content="日本全国の開店・閉店・テナント情報を、エリア・業種・地図感覚でチェック。街の変化をわかりやすくまとめた店舗情報データベースです。">
   <meta name="theme-color" content="#f8fcff">
   <link rel="stylesheet" href="styles.css">
+  <style>
+    .brand-wrap{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:12px;align-items:center;min-width:410px;position:relative}
+    .jp-brand-logo{grid-column:1;grid-row:1 / span 2;display:flex;align-items:center;line-height:1;white-space:nowrap;font-weight:950;letter-spacing:-.07em}
+    .jp-brand-pin{width:34px;height:34px;margin-right:7px;border-radius:11px 11px 15px 11px;display:grid;place-items:center;background:linear-gradient(145deg,#59cc66,#24a949);color:#fff;font-size:19px;transform:rotate(-4deg);box-shadow:0 6px 14px rgba(32,157,70,.18)}
+    .jp-brand-open,.jp-brand-close,.jp-brand-map{display:inline-block;font-size:31px;font-weight:950;letter-spacing:-.08em}
+    .jp-brand-open{color:#20ad49}.jp-brand-close{color:#f23f69;margin-left:3px}.jp-brand-map{color:#11182f;font-size:24px;margin-left:5px;letter-spacing:-.06em}
+    .brand-english{grid-column:2;grid-row:1;align-self:end;color:#11182f;font-size:9px;line-height:1.1;font-weight:900;letter-spacing:.22em;text-transform:uppercase}
+    .brand-sub{grid-column:2;grid-row:2;align-self:start;margin-top:4px;max-width:175px;color:#536078;font-size:8px;line-height:1.45;letter-spacing:.02em}
+    @media(max-width:1100px){.brand-wrap{min-width:350px}}
+    @media(max-width:850px){.brand-wrap{min-width:0;grid-template-columns:auto 1fr}}
+    @media(max-width:560px){.jp-brand-open,.jp-brand-close{font-size:25px}.jp-brand-map{font-size:19px}.jp-brand-pin{width:29px;height:29px;font-size:16px}.brand-english{font-size:8px}.brand-sub{font-size:7px;max-width:130px}}
+  </style>
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5776658615046901" crossorigin="anonymous"></script>
 </head>
 <body>
 <header class="site-header">
-  <a class="brand-wrap" href="/" aria-label="Open Close Map トップ">
-    <div class="brand-logo">
-      <span class="brand-open">O</span>pen
-      <span class="brand-close">C</span>lose
-      <span class="brand-map">Map</span>
+  <a class="brand-wrap" href="/" aria-label="開店閉店マップ トップ">
+    <div class="jp-brand-logo">
+      <span class="jp-brand-pin">▥</span>
+      <span class="jp-brand-open">開店</span><span class="jp-brand-close">閉店</span><span class="jp-brand-map">マップ</span>
     </div>
-    <div class="brand-sub">日本の、あたらしいお店と、さよならするお店。</div>
+    <div class="brand-english">Open Close Map</div>
+    <div class="brand-sub">あたらしいお店、さよならするお店。この街の今がわかる。</div>
   </a>
 
   <nav class="main-nav" aria-label="メインメニュー">
@@ -207,8 +219,8 @@
 
 <footer class="site-footer">
   <div>
-    <strong>Open Close Map</strong>
-    <span>街は、つねに動いてる。</span>
+    <strong>開店閉店マップ</strong>
+    <span>Open Close Map｜街は、つねに動いてる。</span>
   </div>
   <small>© 2026 開店閉店マップ</small>
 </footer>
