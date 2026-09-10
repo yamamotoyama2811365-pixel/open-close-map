@@ -3,4 +3,5 @@ Allow: /
 Disallow: /api/
 
 Sitemap: https://open-close-map.onrender.com/sitemap.xml
-Sitemap: https://open-close-map.onrender.com/sitemap-seo.xml
+Sitemap: https://open-close-map.onrender.com/open/sitemap.xml
+Sitemap: https://open-close-map.onrender.com/close/sitemap.xml
