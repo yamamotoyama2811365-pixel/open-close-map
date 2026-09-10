@@ -6,6 +6,7 @@
   <title>開店閉店マップ｜全国の開店・閉店情報</title>
   <meta name="description" content="日本全国の開店・閉店・テナント情報を、エリア・業種・地図感覚でチェック。街の変化をわかりやすくまとめた店舗情報データベースです。">
   <meta name="theme-color" content="#f8fcff">
+  <link rel="canonical" href="https://open-close-map.onrender.com/">
   <link rel="stylesheet" href="styles.css">
   <style>
     .brand-wrap{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:12px;align-items:center;min-width:410px;position:relative}
@@ -35,8 +36,8 @@
   <nav class="main-nav" aria-label="メインメニュー">
     <a class="active" href="/"><span class="nav-icon">⌂</span>ホーム</a>
     <a href="#areas"><span class="nav-icon">⌖</span>エリアから探す</a>
-    <a href="#latest" data-nav-status="opening"><span class="nav-icon">＋</span>新規オープン</a>
-    <a href="#latest" data-nav-status="closing"><span class="nav-icon">−</span>閉店情報</a>
+    <a href="/open/"><span class="nav-icon">＋</span>新規オープン</a>
+    <a href="/close/"><span class="nav-icon">−</span>閉店情報</a>
     <a href="#categories"><span class="nav-icon">◌</span>業種から探す</a>
   </nav>
 </header>
@@ -56,12 +57,8 @@
         </div>
 
         <div class="hero-shortcuts">
-          <button type="button" class="shortcut open" data-shortcut-status="opening">
-            <span>OPEN</span> 開店情報を見る
-          </button>
-          <button type="button" class="shortcut close" data-shortcut-status="closing">
-            <span>CLOSE</span> 閉店情報を見る
-          </button>
+          <a class="shortcut open" href="/open/"><span>OPEN</span> 開店情報を見る</a>
+          <a class="shortcut close" href="/close/"><span>CLOSE</span> 閉店情報を見る</a>
         </div>
       </div>
 
@@ -222,6 +219,7 @@
     <strong>開店閉店マップ</strong>
     <span>Open Close Map｜街は、つねに動いてる。</span>
   </div>
+  <div class="footer-seo-links"><a href="/open/">全国の開店情報</a><a href="/close/">全国の閉店情報</a></div>
   <small>© 2026 開店閉店マップ</small>
 </footer>
 
