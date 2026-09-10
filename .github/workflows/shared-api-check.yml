@@ -1,0 +1,56 @@
+name: Shared API read-only verification
+on:
+  push:
+    branches: [ops/shared-api-check]
+    paths: [.github/workflows/shared-api-check.yml]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check shared API, database, CORS and scoped identity
+        shell: python
+        run: |
+          import json, os, time, urllib.request, urllib.error, urllib.parse
+          base = "https://buzz-now-1.onrender.com/open-close"
+          old = "https://open-close-map-api.onrender.com"
+          def request(url, method="GET", headers=None):
+              return urllib.request.urlopen(urllib.request.Request(url,method=method,headers=headers or {}),timeout=30)
+          def data(url, headers=None):
+              with request(url,headers=headers) as r: return json.load(r)
+          for attempt in range(40):
+              try:
+                  assert data(base+"/ready")["ready"] is True
+                  break
+              except Exception:
+                  if attempt == 39: raise
+                  time.sleep(15)
+          stores = data(base+"/api/stores?limit=1")
+          assert stores["items"], "No stores returned"
+          sid = stores["items"][0]["id"]
+          assert data(base+f"/api/stores/{sid}") == data(old+f"/api/stores/{sid}")
+          assert data(base+"/api/stats")["mode"] == "database"
+          for path in ["/api/categories","/api/national-insights","/api/public-config"]:
+              data(base+path)
+          with request(base+f"/seo/store/{sid}") as r:
+              html=r.read().decode()
+              assert "https://open-close-map.onrender.com" in html
+          with request(base+"/api/stores",method="OPTIONS",headers={"Origin":"https://open-close-map.onrender.com","Access-Control-Request-Method":"GET"}) as r:
+              assert r.headers["access-control-allow-origin"] == "https://open-close-map.onrender.com"
+          oidc_url=os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]+"&audience="+urllib.parse.quote(base,safe="")
+          token=data(oidc_url,{"Authorization":"Bearer "+os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})["value"]
+          bearer={"Authorization":"Bearer "+token}
+          assert data(base+"/api/source-health",bearer)["ok"] is True
+          assert data(base+"/api/prefecture-coverage",bearer)["ok"] is True
+          for headers,expected in [({},401),(bearer,403)]:
+              try:
+                  request(base+"/api/admin/inquiries",headers=headers)
+              except urllib.error.HTTPError as e:
+                  assert e.code == expected, e.code
+              else:
+                  raise RuntimeError("Private inbox was not protected")
+          print("VERIFIED: same store data, shared database ready, public APIs, SEO HTML, CORS and scoped GitHub identity.")
+          print("No collection, inquiry creation or private inbox access performed.")
