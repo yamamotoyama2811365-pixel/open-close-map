@@ -1,0 +1,21 @@
+/* Native navigation links retain the existing finder-button appearance. */
+.area-grid a,.category-grid a{
+  min-height:51px;border:1px solid #e6edf3;border-radius:13px;
+  background:#fbfdff;color:#2f3b50;font-size:12px;font-weight:800;
+  transition:.16s ease;display:flex;align-items:center;
+}
+.area-grid a{justify-content:space-between;padding:0 13px}
+.area-grid a b{font-size:13px;color:#9aabba}
+.category-grid a{justify-content:center;padding:10px 6px;text-align:center;flex-wrap:wrap}
+.category-grid a small{font-size:9px;color:#95a1b2;margin-left:4px}
+.area-grid a:hover,.category-grid a:hover{
+  transform:translateY(-2px);border-color:#b8d8f5;background:#f2faff;
+  box-shadow:0 8px 20px rgba(60,112,153,.08);
+}
+.hero-mini-row:hover .hero-mini-name,.national-cat-row:hover span{text-decoration:underline}
+a:focus-visible,button:focus-visible{outline:3px solid #2f80ed;outline-offset:3px}
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .area-grid a,.category-grid a,.store-card{transition:none}
+  .area-grid a:hover,.category-grid a:hover,.store-card:hover{transform:none}
+}

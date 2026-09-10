@@ -3,11 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>開店閉店マップ｜全国の開店・閉店情報</title>
+  <title>開店閉店マップ｜全国の新規オープン・閉店情報</title>
   <meta name="description" content="日本全国の開店・閉店・テナント情報を、エリア・業種・地図感覚でチェック。街の変化をわかりやすくまとめた店舗情報データベースです。">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ja_JP">
+  <meta property="og:site_name" content="開店閉店マップ">
+  <meta property="og:title" content="開店閉店マップ｜全国の新規オープン・閉店情報">
+  <meta property="og:description" content="全国の開店・閉店情報を地域・業種から検索。店舗の所在地、日程、掲載元を確認できます。">
+  <meta property="og:url" content="https://open-close-map.onrender.com/">
+  <meta property="og:image" content="https://open-close-map.onrender.com/assets/open-close-map-japan.png">
+  <meta property="og:image:alt" content="日本地図に開店・閉店のアイコンが並ぶイラスト">
+  <meta name="twitter:card" content="summary_large_image">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","@id":"https://open-close-map.onrender.com/#website","url":"https://open-close-map.onrender.com/","name":"開店閉店マップ","alternateName":"Open Close Map","inLanguage":"ja","description":"全国の開店・閉店情報を地域・業種から探せる店舗情報サイト。"}</script>
   <meta name="theme-color" content="#f8fcff">
   <link rel="canonical" href="https://open-close-map.onrender.com/">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="seo-growth.css?v=20260910">
   <style>
     .brand-wrap{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:12px;align-items:center;min-width:410px;position:relative}
     .jp-brand-logo{grid-column:1;grid-row:1 / span 2;display:flex;align-items:center;line-height:1;white-space:nowrap;font-weight:950;letter-spacing:-.07em}
@@ -46,7 +58,7 @@
   <section class="hero-shell">
     <div class="hero-main">
       <div class="hero-copy">
-        <div class="eyebrow">OPEN / CLOSE MAP OF JAPAN</div>
+        <div class="eyebrow">全国の開店・閉店情報</div>
         <h1>街の変化が<br>見えてくる。</h1>
         <p>日本全国の開店・閉店情報を、<br class="desktop-br">エリアとデータでわかりやすく。</p>
 
@@ -63,7 +75,7 @@
       </div>
 
       <div class="hero-map">
-        <img src="assets/open-close-map-japan.png" alt="日本地図に開店・閉店のアイコンが並ぶイラスト">
+        <img src="assets/open-close-map-japan.png" alt="日本地図に開店・閉店のアイコンが並ぶイラスト" fetchpriority="high" decoding="async">
         <div class="map-glow"></div>
 
         <aside class="hero-latest-card" aria-label="直近の開店・閉店情報">
@@ -126,12 +138,12 @@
           <span class="finder-icon green">⌖</span>
         </div>
         <div class="area-grid">
-          <button data-pref="北海道"><span>北海道</span><b>→</b></button>
-          <button data-pref="東京都"><span>東京都</span><b>→</b></button>
-          <button data-pref="神奈川県"><span>神奈川県</span><b>→</b></button>
-          <button data-pref="愛知県"><span>愛知県</span><b>→</b></button>
-          <button data-pref="大阪府"><span>大阪府</span><b>→</b></button>
-          <button data-pref="福岡県"><span>福岡県</span><b>→</b></button>
+          <a href="/area/%E5%8C%97%E6%B5%B7%E9%81%93" data-pref="北海道" data-ga-event="area_select" data-ga-prefecture="北海道"><span>北海道</span><b>→</b></a>
+          <a href="/area/%E6%9D%B1%E4%BA%AC%E9%83%BD" data-pref="東京都" data-ga-event="area_select" data-ga-prefecture="東京都"><span>東京都</span><b>→</b></a>
+          <a href="/area/%E7%A5%9E%E5%A5%88%E5%B7%9D%E7%9C%8C" data-pref="神奈川県" data-ga-event="area_select" data-ga-prefecture="神奈川県"><span>神奈川県</span><b>→</b></a>
+          <a href="/area/%E6%84%9B%E7%9F%A5%E7%9C%8C" data-pref="愛知県" data-ga-event="area_select" data-ga-prefecture="愛知県"><span>愛知県</span><b>→</b></a>
+          <a href="/area/%E5%A4%A7%E9%98%AA%E5%BA%9C" data-pref="大阪府" data-ga-event="area_select" data-ga-prefecture="大阪府"><span>大阪府</span><b>→</b></a>
+          <a href="/area/%E7%A6%8F%E5%B2%A1%E7%9C%8C" data-pref="福岡県" data-ga-event="area_select" data-ga-prefecture="福岡県"><span>福岡県</span><b>→</b></a>
         </div>
       </section>
 
@@ -144,12 +156,12 @@
           <span class="finder-icon blue">◌</span>
         </div>
         <div id="categoryGrid" class="category-grid">
-          <button data-cat="ラーメン">ラーメン</button>
-          <button data-cat="中華">中華</button>
-          <button data-cat="カフェ">カフェ</button>
-          <button data-cat="焼肉">焼肉</button>
-          <button data-cat="美容">美容</button>
-          <button data-cat="コンビニ">コンビニ</button>
+          <a href="/category/%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3" data-cat="ラーメン" data-ga-event="category_select" data-ga-category="ラーメン">ラーメン</a>
+          <a href="/category/%E4%B8%AD%E8%8F%AF" data-cat="中華" data-ga-event="category_select" data-ga-category="中華">中華</a>
+          <a href="/category/%E3%82%AB%E3%83%95%E3%82%A7" data-cat="カフェ" data-ga-event="category_select" data-ga-category="カフェ">カフェ</a>
+          <a href="/category/%E7%84%BC%E8%82%89" data-cat="焼肉" data-ga-event="category_select" data-ga-category="焼肉">焼肉</a>
+          <a href="/category/%E7%BE%8E%E5%AE%B9" data-cat="美容" data-ga-event="category_select" data-ga-category="美容">美容</a>
+          <a href="/category/%E3%82%B3%E3%83%B3%E3%83%93%E3%83%8B" data-cat="コンビニ" data-ga-event="category_select" data-ga-category="コンビニ">コンビニ</a>
         </div>
         <p class="finder-note">その他の業種は上部の検索から探せます。</p>
       </section>
@@ -208,6 +220,7 @@
       </div>
     </div>
 
+    <noscript><p class="finder-note">最新一覧の表示にはJavaScriptを使用しています。<a href="/open/">全国の開店情報</a>・<a href="/close/">全国の閉店情報</a>や上の地域・業種リンクからも探せます。</p></noscript>
     <div id="grid" class="store-grid">
       <div class="empty">読み込み中...</div>
     </div>
@@ -223,7 +236,7 @@
   <nav aria-label="運営情報"><a href="/about.html">運営・編集方針</a> · <a href="/privacy.html">プライバシー</a> · <a href="/contact.html">お問い合わせ・訂正</a></nav><small>© 2026 開店閉店マップ</small>
 </footer>
 
-<script src="analytics.js?v=shared-20260910"></script>
-<script src="app.js?v=shared-20260910"></script>
+<script src="analytics.js?v=seo-growth-20260910"></script>
+<script src="app.js?v=seo-growth-20260910"></script>
 </body>
 </html>

@@ -27,11 +27,11 @@ function renderHeroLatest(items){
   const rows=(items||[]).slice(0,5);
   box.innerHTML=rows.length
     ?rows.map(x=>`
-      <div class="hero-mini-row">
+      <a class="hero-mini-row" href="/store/${encodeURIComponent(x.id)}" data-ga-event="store_select" data-ga-store-id="${esc(x.id)}" data-ga-placement="hero">
         <span class="hero-mini-status ${esc(x.status)}">${esc(label(x.status))}</span>
         <span class="hero-mini-name">${esc(x.name||'店舗名未確認')}</span>
         <span class="hero-mini-date">${esc(x.open_date||x.close_date||'')}</span>
-      </div>
+      </a>
     `).join('')
     :'<div class="mini-loading">表示できる情報がありません。</div>';
 }
@@ -39,7 +39,7 @@ function renderHeroLatest(items){
 function render(items){
   $('grid').innerHTML=items?.length
     ?items.map(x=>`
-      <article class="store-card" data-id="${x.id}" data-status="${esc(x.status||'')}" data-category="${esc(x.category||'')}">
+      <a class="store-card" href="/store/${encodeURIComponent(x.id)}" data-ga-event="store_select" data-ga-store-id="${esc(x.id)}" data-ga-status="${esc(x.status||'')}" data-ga-category="${esc(x.category||'')}" data-ga-placement="latest">
         <div class="status-orb ${esc(x.status)}"><span>▥</span></div>
         <div class="store-body">
           <div class="store-topline">
@@ -53,20 +53,11 @@ function render(items){
           </div>
         </div>
         <div class="store-date">${esc(x.open_date||x.close_date||'日付未確認')}</div>
-      </article>
+      </a>
     `).join('')
     :'<div class="empty">表示できる店舗情報がありません。</div>';
 
-  document.querySelectorAll('.store-card').forEach(c=>{
-    c.onclick=()=>{
-      window.gaEvent?.('store_select',{
-        store_id:c.dataset.id,
-        status:c.dataset.status||'',
-        category:c.dataset.category||''
-      });
-      location.href=`/store/${encodeURIComponent(c.dataset.id)}`;
-    };
-  });
+  // Native links support crawling, keyboard navigation and opening a new tab.
 }
 
 async function getJSON(u){
@@ -203,23 +194,7 @@ document.querySelectorAll('[data-nav-status]').forEach(link=>{
   };
 });
 
-/* SEOページへ直接つなぐ */
-document.querySelectorAll('[data-pref]').forEach(b=>{
-  b.onclick=()=>{
-    window.gaEvent?.('area_select',{prefecture:b.dataset.pref});
-    location.href=`/area/${encodeURIComponent(b.dataset.pref)}`;
-  };
-});
-
-function bindCategoryButtons(){
-  document.querySelectorAll('[data-cat]').forEach(b=>{
-    b.onclick=()=>{
-      window.gaEvent?.('category_select',{category:b.dataset.cat});
-      location.href=`/category/${encodeURIComponent(b.dataset.cat)}`;
-    };
-  });
-}
-
+// Region/category navigation uses native href links; analytics.js delegates clicks.
 async function loadCategories(){
   try{
     const d=await getJSON(API+'/api/categories');
@@ -233,17 +208,15 @@ async function loadCategories(){
 
     if(items.length){
       $('categoryGrid').innerHTML=items.map(x=>
-        `<button data-cat="${esc(x.category)}">${esc(x.category)} <small>${esc(x.count)}</small></button>`
+        `<a href="/category/${encodeURIComponent(x.category)}" data-cat="${esc(x.category)}" data-ga-event="category_select" data-ga-category="${esc(x.category)}">${esc(x.category)} <small>${esc(x.count)}</small></a>`
       ).join('');
     }
   }catch(e){
     console.warn('category list fallback',e);
   }
 
-  bindCategoryButtons();
 }
 
-bindCategoryButtons();
 
 function renderNationalComboChart(items){
   if(!items||!items.length){
@@ -324,7 +297,7 @@ async function nationalInsights(){
           const net=Number(x.net||0);
           const cls=net>0?'up':net<0?'down':'flat';
           const txt=(net>0?'+':'')+net;
-          return `<div class="national-cat-row"><span>${esc(x.category)}</span><strong class="${cls}">${txt}</strong></div>`;
+          return `<a class="national-cat-row" href="/category/${encodeURIComponent(x.category)}" data-ga-event="category_select" data-ga-category="${esc(x.category)}" data-ga-placement="national"><span>${esc(x.category)}</span><strong class="${cls}">${txt}</strong></a>`;
         }).join('')
       :'<div class="empty">業種別データを蓄積中です。</div>';
   }catch(e){
