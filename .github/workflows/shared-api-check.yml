@@ -42,6 +42,10 @@ jobs:
               assert r.headers["access-control-allow-origin"] == "https://open-close-map.onrender.com"
           oidc_url=os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]+"&audience="+urllib.parse.quote(base,safe="")
           token=data(oidc_url,{"Authorization":"Bearer "+os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})["value"]
+          import base64
+          payload=token.split(".")[1]
+          claims=json.loads(base64.urlsafe_b64decode(payload+"="*((-len(payload))%4)))
+          print("Identity scope:",json.dumps({k:claims.get(k) for k in ["sub","repository","repository_id","ref","workflow_ref","event_name"]}))
           bearer={"Authorization":"Bearer "+token}
           assert data(base+"/api/source-health",bearer)["ok"] is True
           assert data(base+"/api/prefecture-coverage",bearer)["ok"] is True
