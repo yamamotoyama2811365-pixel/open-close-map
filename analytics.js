@@ -4,6 +4,15 @@
   if(window.__openCloseAnalyticsLoaded)return;
   window.__openCloseAnalyticsLoaded=true;
 
+  // Start the independent counter before, and without waiting for, Google.
+  if(!document.querySelector('script[data-ocm-pv]')){
+    const counter=document.createElement('script');
+    counter.src='/first-party-pv.js?v=20260911';
+    counter.async=true;
+    counter.dataset.ocmPv='1';
+    document.head.appendChild(counter);
+  }
+
   const ANALYTICS_API='https://buzz-now-1.onrender.com/open-close';
   const DEFAULT_GA_MEASUREMENT_ID='G-ZB4T13GM5P';
   const CONFIG_TIMEOUT_MS=3000;
