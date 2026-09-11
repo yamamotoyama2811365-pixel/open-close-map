@@ -1,0 +1,29 @@
+{
+  "approved_source_sha256": "d35c63deb75c80879d6537699e01239841a7ab3387a3fb4e8f519cdd5aceb2b1",
+  "resizing_only": true,
+  "files": {
+    "favicon.ico": {
+      "sha256": "84f0066634d3e2e2b37ae879b52cb67028b409a028e35c935c517dbccebf0f33",
+      "bytes": 8107
+    },
+    "favicon-96x96.png": {
+      "sha256": "a55be6a6509aef767112cb583d285c7368302002213a060a3122316768922443",
+      "bytes": 13092
+    },
+    "apple-touch-icon.png": {
+      "sha256": "b2d4f750fd7a1284c210be7d29c471e92d341a7c947ed59f38ba4c2f1c7df150",
+      "bytes": 34408
+    }
+  },
+  "html_files": [
+    "about.html",
+    "close/index.html",
+    "contact.html",
+    "detail.html",
+    "index.html",
+    "open/index.html",
+    "privacy.html"
+  ],
+  "shared_script_icons": true,
+  "google_verification_files_changed": false
+}
