@@ -1,3 +1,19 @@
+/* OCM_APPROVED_FAVICON_20260911: shared server-rendered page icons. */
+(function(){
+  'use strict';
+  if(!document.head)return;
+  const icons=[
+    {rel:'icon',href:'/favicon.ico',type:'image/x-icon',sizes:'16x16 32x32 48x48'},
+    {rel:'icon',href:'/favicon-96x96.png',type:'image/png',sizes:'96x96'},
+    {rel:'apple-touch-icon',href:'/apple-touch-icon.png',sizes:'180x180'}
+  ];
+  for(const item of icons){
+    if(document.querySelector('link[rel="'+item.rel+'"][href="'+item.href+'"]'))continue;
+    const link=document.createElement('link');
+    for(const [key,value] of Object.entries(item))link[key]=value;
+    document.head.appendChild(link);
+  }
+})();
 /* One page view per document; public-config failures use the existing site ID. */
 (function(){
   'use strict';
