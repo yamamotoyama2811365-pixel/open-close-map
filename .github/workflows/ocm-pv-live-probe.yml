@@ -1,0 +1,54 @@
+name: One-time Open Close Map PV live verification
+on:
+  push:
+    branches: [ops/ocm-pv-live-20260911]
+    paths: [.github/workflows/ocm-pv-live-probe.yml]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install playwright httpx
+      - run: python -m playwright install --with-deps chromium
+      - name: Test-only live browser requests and private report check
+        shell: bash
+        run: |
+          python - <<'PY'
+          import asyncio,json,httpx
+          from playwright.async_api import async_playwright
+          ORIGIN='https://open-close-map.onrender.com'
+          API='https://buzz-now-1.onrender.com/open-close'
+          async def main():
+              async with httpx.AsyncClient(timeout=30,follow_redirects=True) as h:
+                  for path in ('/health','/api/pv-report'):
+                      r=await h.get(API+path)
+                      print('ENDPOINT',path,'STATUS',r.status_code,'BODY',r.text[:150])
+              async with async_playwright() as p:
+                  browser=await p.chromium.launch()
+                  ctx=await browser.new_context()
+                  # Suppress third-party advertising/GA only in this probe, not the real website.
+                  async def route(r):
+                      from urllib.parse import urlsplit
+                      host=urlsplit(r.request.url).hostname
+                      if host not in ('open-close-map.onrender.com','buzz-now-1.onrender.com'):
+                          await r.abort()
+                      else:
+                          await r.continue_()
+                  await ctx.route('**/*',route)
+                  page=await ctx.new_page()
+                  page.on('pageerror',lambda e:print('BROWSER_ERROR',str(e)[:200]))
+                  page.on('requestfailed',lambda r:print('REQUEST_FAILED',r.url.split('?')[0],r.failure) if '/api/page-view' in r.url else None)
+                  page.on('response',lambda r:print('COUNTER_HTTP',r.status) if '/api/page-view' in r.url else None)
+                  for path in ('/','/close/','/area/%E5%8C%97%E6%B5%B7%E9%81%93'):
+                      response=await page.goto(ORIGIN+path+'?ocm_pv_test=1',wait_until='domcontentloaded',timeout=45000)
+                      await page.wait_for_timeout(10000)
+                      data=await page.evaluate('''async()=>({title:document.title,visible:document.visibilityState,dnt:navigator.doNotTrack,gpc:navigator.globalPrivacyControl,loaded:!!window.__ocmFirstPartyPVLoaded,result:window.__ocmFirstPartyPVResult?await window.__ocmFirstPartyPVResult:null,script:!!document.querySelector('script[data-ocm-pv]')})''')
+                      print('PAGE',path,'HTTP',response.status,json.dumps(data,ensure_ascii=False))
+                  await browser.close()
+          asyncio.run(main())
+          PY
