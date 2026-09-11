@@ -1,0 +1,40 @@
+name: Prepare approved site favicon
+on:
+  push:
+    branches: [work/favicon-20260911]
+    paths: ['assets/approved-icon-192.webp', 'scripts/install-approved-favicon.py', '.github/workflows/favicon-prepare.yml']
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: pip install Pillow==11.3.0
+      - name: Convert approved artwork and add icon references
+        run: python scripts/install-approved-favicon.py
+      - name: Preserve existing analytics and navigation behavior
+        run: |
+          node --check analytics.js
+          node scripts/test-pv.mjs
+          node scripts/test-seo-growth.mjs
+      - name: Save verified assets on preparation branch only
+        run: |
+          test "$GITHUB_REF" = refs/heads/work/favicon-20260911
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add favicon.ico favicon-96x96.png apple-touch-icon.png analytics.js docs/favicon-assets.json
+          git add -u -- '*.html'
+          git diff --cached --stat
+          if ! git diff --cached --quiet; then
+            git commit -m 'Install approved map favicon across public pages'
+            git push origin HEAD:work/favicon-20260911
+          fi
+          git rev-parse HEAD
