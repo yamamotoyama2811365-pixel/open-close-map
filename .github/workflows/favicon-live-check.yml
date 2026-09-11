@@ -1,0 +1,73 @@
+name: Verify live approved favicon
+on:
+  push:
+    branches: [ops/favicon-live-20260911]
+    paths: [.github/workflows/favicon-live-check.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install httpx Pillow==11.3.0 playwright
+      - run: python -m playwright install --with-deps chromium
+      - name: Confirm exact assets and static/dynamic page icon links
+        run: |
+          python -u - <<'PY'
+          import asyncio,hashlib,io,json,pathlib
+          import httpx
+          from PIL import Image
+          from playwright.async_api import async_playwright
+          ORIGIN='https://open-close-map.onrender.com'
+          manifest=json.loads(pathlib.Path('docs/favicon-assets.json').read_text())
+          async def main():
+              async with httpx.AsyncClient(timeout=30,follow_redirects=True) as client:
+                  for name,expected in manifest['files'].items():
+                      for attempt in range(8):
+                          r=await client.get(ORIGIN+'/'+name)
+                          digest=hashlib.sha256(r.content).hexdigest()
+                          if r.status_code==200 and digest==expected['sha256']:break
+                          print('WAIT',name,r.status_code,attempt+1)
+                          await asyncio.sleep(10)
+                      assert r.status_code==200 and digest==expected['sha256'],name
+                      assert 'image/' in r.headers.get('content-type',''),(name,r.headers.get('content-type'))
+                      with Image.open(io.BytesIO(r.content)) as im:
+                          print('ASSET_OK',name,r.status_code,im.format,im.size,'sha256',digest)
+                  for path in ('/','/open/','/close/','/privacy.html'):
+                      r=await client.get(ORIGIN+path)
+                      assert r.status_code==200
+                      head=r.text.split('</head>')[0]
+                      assert 'href="/favicon-96x96.png"' in head and 'href="/apple-touch-icon.png"' in head
+                      print('HTML_HEAD_OK',path)
+              async with async_playwright() as p:
+                  browser=await p.chromium.launch()
+                  ctx=await browser.new_context()
+                  async def route(route):
+                      url=route.request.url
+                      if url.startswith(ORIGIN) or url.startswith('https://buzz-now-1.onrender.com'):
+                          await route.continue_()
+                      else:
+                          await route.abort()
+                  await ctx.route('**/*',route)
+                  page=await ctx.new_page()
+                  errors=[]
+                  page.on('pageerror',lambda e:errors.append(str(e)))
+                  for path in ('/','/open/','/close/','/area/%E5%8C%97%E6%B5%B7%E9%81%93'):
+                      r=await page.goto(ORIGIN+path+'?ocm_pv=off',wait_until='domcontentloaded',timeout=45000)
+                      assert r.status==200
+                      await page.wait_for_selector('head link[rel="icon"][href="/favicon-96x96.png"]',state='attached')
+                      rows=await page.locator('head link[rel="icon"],head link[rel="apple-touch-icon"]').evaluate_all('(els)=>els.map(e=>({rel:e.rel,href:e.getAttribute("href"),sizes:e.getAttribute("sizes")}))')
+                      assert sum(x['href']=='/favicon-96x96.png' for x in rows)==1
+                      assert any(x['href']=='/apple-touch-icon.png' for x in rows)
+                      print('BROWSER_ICONS_OK',path,json.dumps(rows))
+                      assert not await page.evaluate('!!window.__ocmFirstPartyPVResult')
+                  assert not errors,errors
+                  print('LIVE_VERIFIED: exact approved artwork, homepage/open/close/area links; no test PV or advertising impressions emitted.')
+                  await browser.close()
+          asyncio.run(main())
+          PY
