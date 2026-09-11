@@ -18,7 +18,7 @@ jobs:
       - name: Test-only live browser requests and private report check
         shell: bash
         run: |
-          python - <<'PY'
+          python -u - <<'PY'
           import asyncio,json,httpx
           from playwright.async_api import async_playwright
           ORIGIN='https://open-close-map.onrender.com'
@@ -28,6 +28,13 @@ jobs:
                   for path in ('/health','/api/pv-report'):
                       r=await h.get(API+path)
                       print('ENDPOINT',path,'STATUS',r.status_code,'BODY',r.text[:150])
+                      assert r.status_code == (200 if path=='/health' else 401)
+                  for attempt in range(6):
+                      r=await h.post(API+'/api/page-view',headers={'Origin':ORIGIN},json={'page':'/','source':'direct_or_unknown','is_test':True})
+                      print('TEST_POST',attempt+1,r.status_code,r.text[:120])
+                      if r.status_code==204:break
+                      await asyncio.sleep(20)
+                  assert r.status_code==204,'Test-only PV receipt failed'
               async with async_playwright() as p:
                   browser=await p.chromium.launch()
                   ctx=await browser.new_context()
@@ -46,9 +53,10 @@ jobs:
                   page.on('response',lambda r:print('COUNTER_HTTP',r.status) if '/api/page-view' in r.url else None)
                   for path in ('/','/close/','/area/%E5%8C%97%E6%B5%B7%E9%81%93'):
                       response=await page.goto(ORIGIN+path+'?ocm_pv_test=1',wait_until='domcontentloaded',timeout=45000)
-                      await page.wait_for_timeout(10000)
-                      data=await page.evaluate('''async()=>({title:document.title,visible:document.visibilityState,dnt:navigator.doNotTrack,gpc:navigator.globalPrivacyControl,loaded:!!window.__ocmFirstPartyPVLoaded,result:window.__ocmFirstPartyPVResult?await window.__ocmFirstPartyPVResult:null,script:!!document.querySelector('script[data-ocm-pv]')})''')
+                      await page.wait_for_timeout(8000)
+                      data=await page.evaluate('''async()=>({title:document.title,visible:document.visibilityState,loaded:!!window.__ocmFirstPartyPVLoaded,result:window.__ocmFirstPartyPVResult?await window.__ocmFirstPartyPVResult:null})''')
                       print('PAGE',path,'HTTP',response.status,json.dumps(data,ensure_ascii=False))
+                      assert response.status==200 and data.get('result',{}).get('status')==204
                   await browser.close()
           asyncio.run(main())
           PY
