@@ -1,0 +1,58 @@
+name: Notify IndexNow
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '20 */6 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: open-close-indexnow
+  cancel-in-progress: true
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wait for Render static publication
+        if: github.event_name == 'push'
+        run: sleep 45
+      - name: Submit live URLs to IndexNow
+        env:
+          SITE: https://open-close-map.onrender.com
+          INDEXNOW_KEY: 241b7052dc46c7cfd0e0769d27a385aa
+          FULL_SYNC: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request, urllib.error, xml.etree.ElementTree as ET
+          from datetime import datetime, timezone, timedelta
+          site=os.environ['SITE'].rstrip('/'); key=os.environ['INDEXNOW_KEY']; key_url=f'{site}/{key}.txt'
+          for _ in range(24):
+              try:
+                  if urllib.request.urlopen(key_url,timeout=10).read().decode().strip()==key: break
+              except Exception: pass
+              time.sleep(5)
+          else: raise SystemExit('IndexNow key file is not live')
+          root=ET.fromstring(urllib.request.urlopen(site+'/sitemap.xml',timeout=30).read()); ns={'s':'http://www.sitemaps.org/schemas/sitemap/0.9'}
+          cutoff=datetime.now(timezone.utc)-timedelta(days=2); full=os.environ.get('FULL_SYNC')=='true'; urls=[]
+          for node in root.findall('s:url',ns):
+              loc=node.find('s:loc',ns); lm=node.find('s:lastmod',ns)
+              if loc is None or not loc.text: continue
+              if full or lm is None or not lm.text:
+                  urls.append(loc.text.strip()); continue
+              try:
+                  stamp=datetime.fromisoformat(lm.text.strip().replace('Z','+00:00'))
+                  if stamp.tzinfo is None: stamp=stamp.replace(tzinfo=timezone.utc)
+                  if stamp>=cutoff: urls.append(loc.text.strip())
+              except ValueError:
+                  urls.append(loc.text.strip())
+          urls=list(dict.fromkeys([site+'/']+urls))[:10000]
+          payload=json.dumps({'host':site.split('://',1)[1],'key':key,'keyLocation':key_url,'urlList':urls}).encode()
+          req=urllib.request.Request('https://api.indexnow.org/IndexNow',data=payload,headers={'Content-Type':'application/json; charset=utf-8'},method='POST')
+          try:
+              with urllib.request.urlopen(req,timeout=30) as r: print('IndexNow:',r.status,'URLs:',len(urls),'full:',full)
+          except urllib.error.HTTPError as e:
+              if e.code not in (200,202): raise
+              print('IndexNow:',e.code,'URLs:',len(urls),'full:',full)
+          PY
