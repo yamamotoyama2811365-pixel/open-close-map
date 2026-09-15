@@ -13,7 +13,7 @@ concurrency:
 jobs:
   notify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - name: Wait for Render static publication
         if: github.event_name == 'push'
@@ -28,9 +28,10 @@ jobs:
           import json, os, time, urllib.request, urllib.error, xml.etree.ElementTree as ET
           from datetime import datetime, timezone, timedelta
           site=os.environ['SITE'].rstrip('/'); key=os.environ['INDEXNOW_KEY']; key_url=f'{site}/{key}.txt'
-          for _ in range(24):
+          for _ in range(36):
               try:
-                  if urllib.request.urlopen(key_url,timeout=10).read().decode().strip()==key: break
+                  req=urllib.request.Request(key_url,headers={'Cache-Control':'no-cache','User-Agent':'Mozilla/5.0 IndexNowVerifier/1.0'})
+                  if urllib.request.urlopen(req,timeout=10).read().decode().strip()==key: break
               except Exception: pass
               time.sleep(5)
           else: raise SystemExit('IndexNow key file is not live')
@@ -49,10 +50,17 @@ jobs:
                   urls.append(loc.text.strip())
           urls=list(dict.fromkeys([site+'/']+urls))[:10000]
           payload=json.dumps({'host':site.split('://',1)[1],'key':key,'keyLocation':key_url,'urlList':urls}).encode()
-          req=urllib.request.Request('https://api.indexnow.org/IndexNow',data=payload,headers={'Content-Type':'application/json; charset=utf-8'},method='POST')
-          try:
-              with urllib.request.urlopen(req,timeout=30) as r: print('IndexNow:',r.status,'URLs:',len(urls),'full:',full)
-          except urllib.error.HTTPError as e:
-              if e.code not in (200,202): raise
-              print('IndexNow:',e.code,'URLs:',len(urls),'full:',full)
+          last=None
+          for attempt in range(1,7):
+              req=urllib.request.Request('https://api.indexnow.org/IndexNow',data=payload,headers={'Content-Type':'application/json; charset=utf-8'},method='POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=30) as r:
+                      print('IndexNow:',r.status,'URLs:',len(urls),'full:',full,'attempt:',attempt)
+                      if r.status in (200,202): raise SystemExit(0)
+              except urllib.error.HTTPError as e:
+                  last=e.code
+                  print('IndexNow retryable response:',e.code,'attempt:',attempt)
+                  if e.code not in (403,429): raise
+              if attempt<6: time.sleep(30)
+          raise SystemExit(f'IndexNow validation did not settle; last HTTP {last}')
           PY
