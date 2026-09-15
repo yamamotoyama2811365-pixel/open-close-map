@@ -1,0 +1,69 @@
+name: Open Close Map SEO content depth once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/seo-content-depth-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Expand indexable landing pages
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          changes = []
+
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace(
+            '<title>開店閉店マップ｜全国の新規オープン・閉店情報</title>',
+            '<title>開店閉店マップ｜全国の新規オープン・閉店・店舗情報を地域別に検索</title>'
+          )
+          s = s.replace(
+            '<meta name="description" content="日本全国の開店・閉店・テナント情報を、エリア・業種・地図感覚でチェック。街の変化をわかりやすくまとめた店舗情報データベースです。">',
+            '<meta name="description" content="全国の新規オープン・閉店・営業終了予定の店舗情報を、都道府県・市区町村・業種・店名から検索。開店日や閉店日、所在地、掲載元を確認できる店舗情報データベースです。">'
+          )
+          marker = '<!-- SEO_EDITORIAL_DEPTH_20260915 -->'
+          if marker not in s:
+            block = '''\n  <!-- SEO_EDITORIAL_DEPTH_20260915 -->\n  <section class="finder-wrap" aria-labelledby="how-to-use-map">\n    <div class="section-intro">\n      <span>HOW TO USE</span>\n      <h2 id="how-to-use-map">開店閉店マップで確認できること</h2>\n      <p>新しい店を探すだけでなく、閉店予定や営業終了した店舗、地域ごとの街の変化を調べる入口として使えます。</p>\n    </div>\n    <div class="finder-grid">\n      <section class="finder-card"><h3>地域から開店・閉店情報を探す</h3><p>都道府県ページでは、その地域で確認できた開店・閉店情報をまとめています。店名だけでなく、市区町村、所在地、業種、確認できた日付を整理し、詳細ページから掲載元へ戻れる構成にしています。北海道、東京都、大阪府、福岡県など主要エリアから、各地域の新店・閉店を追えます。</p><p><a href="#areas">都道府県から探す →</a></p></section>\n      <section class="finder-card"><h3>「開店予定」と「閉店情報」を分けて確認</h3><p><a href="/open/">全国の開店情報</a>では新規オープンや開店予定を、<a href="/close/">全国の閉店情報</a>では閉店予定・営業終了を分けて確認できます。日程は変更される場合があるため、当サイトの掲載日だけで断定せず、店舗詳細にある公式情報や掲載元もあわせて確認してください。</p></section>\n      <section class="finder-card"><h3>掲載情報の考え方</h3><p>公開情報や確認できた記事をもとに店舗単位で整理し、同じ情報の重複や店名だけでは判断できない情報を可能な範囲で分けています。開店・閉店の情報は更新されることがあるため、未確認の項目を推測で埋めず、確認できた所在地・日付・出典を優先して掲載します。</p></section>\n    </div>\n  </section>\n'''
+            s = s.replace('</main>', block + '\n</main>', 1)
+          p.write_text(s, encoding='utf-8')
+          changes.append('index.html')
+
+          p = Path('close/index.html')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace(
+            '<meta name="description" content="日本全国の閉店・営業終了予定の店舗情報を都道府県別に掲載。閉店日、エリア、業種、店舗詳細を確認できます。">',
+            '<meta name="description" content="全国の閉店予定・営業終了した店舗情報を都道府県別に掲載。閉店日、所在地、業種、店舗名、掲載元を確認でき、地域ごとの閉店情報を探せます。">'
+          )
+          marker = '<!-- SEO_CLOSE_DEPTH_20260915 -->'
+          if marker not in s:
+            block = '''\n  <!-- SEO_CLOSE_DEPTH_20260915 -->\n  <section class="status-panel" aria-labelledby="closing-guide">\n    <h2 id="closing-guide">閉店情報を見るときのポイント</h2>\n    <p>このページでは、日本全国で確認できた閉店予定・営業終了の店舗情報をまとめています。「閉店」と報じられていても、最終営業日が変更されたり、同じ施設内で移転・業態変更する場合があります。店舗名だけで判断せず、詳細ページの所在地、閉店日、掲載元をあわせて確認してください。</p>\n    <h3>地域別に閉店予定を探す</h3>\n    <p>都道府県リンクから、北海道・東京都・神奈川県・愛知県・大阪府・福岡県など地域ごとの閉店情報へ移動できます。市区町村や店名まで分かっている場合はトップページの検索も利用できます。飲食店、小売店、美容、コンビニなど業種ごとの街の変化を調べる用途にも使えます。</p>\n    <h3>掲載日と閉店日は同じとは限りません</h3>\n    <p>ニュースや公式発表が公開された日と、実際の最終営業日は別の日付であることがあります。当サイトでは確認できた日付を分けて扱い、閉店日が確認できない場合に推測の日付を掲載しない方針です。最新の営業状況は、各店舗の公式案内や掲載元も確認してください。</p>\n  </section>\n'''
+            s = s.replace('<div class="status-page-note">', block + '\n  <div class="status-page-note">', 1)
+          p.write_text(s, encoding='utf-8')
+          changes.append('close/index.html')
+
+          print('patched', ', '.join(changes))
+          PY
+      - name: Commit content depth fixes
+        run: |
+          if git diff --quiet -- index.html close/index.html; then
+            echo 'No changes needed'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html close/index.html
+          git commit -m 'Expand open and close landing page search content'
+          git push origin HEAD:main
