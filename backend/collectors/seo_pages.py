@@ -1255,7 +1255,7 @@ def render_store(database_url, origin, store_id):
     return page_shell(origin,title,desc,canonical_path,body,ld,noindex=d.get("quality_pending",False))
 
 def sitemap_xml(database_url, origin, max_urls=45000):
-    urls=[origin.rstrip("/")+"/"]
+    urls=[origin.rstrip("/")+"/", origin.rstrip("/")+"/open/", origin.rstrip("/")+"/close/"]
     with _connect(database_url) as conn:
         with conn.cursor() as cur:
             cur.execute("""
