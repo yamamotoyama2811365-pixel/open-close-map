@@ -23,7 +23,7 @@
   // Start the independent counter before, and without waiting for, Google.
   if(!document.querySelector('script[data-ocm-pv]')){
     const counter=document.createElement('script');
-    counter.src='/first-party-pv.js?v=20260911';
+    counter.src='/first-party-pv.js?v=20260916';
     counter.async=true;
     counter.dataset.ocmPv='1';
     document.head.appendChild(counter);
