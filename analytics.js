@@ -101,3 +101,14 @@
   window.__openCloseAnalyticsReady=initAnalytics();
   loadAffiliateAds();
 })();
+
+/* i-mobile PC inventory: execute the owner-provided tag only on desktop. */
+(function(){
+  'use strict';
+  const mobile=/iphone|ipad|ipod|android|mobile|windows phone|blackberry|opera mini|opera mobi/i.test(navigator.userAgent||'');
+  if(mobile || !window.matchMedia('(min-width: 769px)').matches)return;
+  document.write(`<aside aria-label="広告" style="text-align:center;margin:28px auto;min-height:250px"><div style="font-size:12px;opacity:.62;margin-bottom:8px">広告</div><div id="im-df4ffa2fa91a456c8de5e93bf43f081c">
+  <script async src="https://imp-adedge.i-mobile.co.jp/script/v1/spot.js?20220104"></script>
+  <script>(window.adsbyimobile=window.adsbyimobile||[]).push({pid:85420,mid:596384,asid:1944822,type:"banner",display:"inline",elementid:"im-df4ffa2fa91a456c8de5e93bf43f081c"})</script>
+</div></aside>`);
+})();
