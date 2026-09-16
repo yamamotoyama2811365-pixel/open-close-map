@@ -31,14 +31,15 @@
     if(!/^\/(?:$|index\.html$|open\/?$|close\/?$|(?:about|privacy|contact)\.html$|store\/[1-9][0-9]*\/?$|(?:area|category)\/)/.test(page))return;
     sent=true;
     const payload={page,source:sourceOf(document.referrer),is_test:test};
-    // Only the coarse source label leaves the browser, never the referrer URL.
+    // Simple no-CORS text/plain POST avoids a browser preflight while the server
+    // still verifies the Origin header and validates the JSON body and path.
     const request=fetch('https://buzz-now-1.onrender.com/open-close/api/page-view',{
-      method:'POST',headers:{'Content-Type':'application/json'},
+      method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},
       body:JSON.stringify(payload),credentials:'omit',referrerPolicy:'no-referrer',
       keepalive:true,cache:'no-store'
     });
-    // No retries: a lost response must not produce a duplicate count.
-    window.__ocmFirstPartyPVResult=request.then(r=>({ok:r.status===204,status:r.status})).catch(()=>({ok:false,status:0}));
+    // Opaque no-CORS responses have status 0; completion only means the browser sent it.
+    window.__ocmFirstPartyPVResult=request.then(()=>({sent:true})).catch(()=>({sent:false}));
   }
   document.addEventListener('visibilitychange',count);
   document.addEventListener('prerenderingchange',count);
