@@ -325,6 +325,23 @@ def page_shell(origin, title, description, canonical_path, body, json_ld=None, n
 </body>
 </html>"""
 
+def impact_headline(d):
+    """Make the verified open/close fact read like a headline without adding claims."""
+    name=(d.get("name") or "店舗名未確認").strip()
+    area="".join(x for x in (d.get("prefecture"),d.get("city")) if x)
+    status=d.get("status") or ""
+    ev=event_date(d)
+    day=("　"+fmt_date(ev)) if ev else ""
+    if status=="closing":
+        return f"「{name}」が閉店へ" + (f"　{area}" if area else "") + day
+    if status=="closed":
+        return f"「{name}」が閉店" + (f"　{area}" if area else "") + day
+    if status=="opening":
+        return f"「{name}」が{area+'に' if area else ''}オープン予定" + day
+    if status=="open":
+        return f"「{name}」が{area+'に' if area else ''}オープン" + day
+    return name
+
 def store_cards(rows):
     if not rows:
         return '<div class="empty">現在掲載できる店舗情報はありません。</div>'
@@ -340,7 +357,7 @@ def store_cards(rows):
   <div class="store-date">{fmt_date(ev)}</div>
   <div class="store-main">
     <span class="badge {cls}">{esc(label)}</span>
-    <h3>{esc(d['name'])}</h3>
+    <h3>{esc(impact_headline(d))}</h3>
     <p>{esc(area)}　・　{esc(cat)}</p>
   </div>
   <div class="arrow">›</div>
@@ -1084,8 +1101,9 @@ def render_store(database_url, origin, store_id):
     ev=event_date(d)
     label,cls=status_info(d["status"],ev)
     area="".join(x for x in [d["prefecture"],d["city"]] if x)
-    title=f"{d['name']}の開店・閉店情報｜{area or '店舗情報'}｜{SITE_NAME}"
-    desc=f"{area}の「{d['name']}」の{label}情報。所在地、日付、業種、掲載元などを確認できます。"
+    headline=impact_headline(d)
+    title=f"{headline}｜{SITE_NAME}"
+    desc=f"{headline}。所在地、日付、業種、掲載元などを確認できます。"
     canonical_path=f"/store/{d['id']}"
 
     rows=[
@@ -1203,8 +1221,8 @@ def render_store(database_url, origin, store_id):
   <div class="wrap">
     <div class="crumbs">トップ　›　{esc(d["prefecture"] or "全国")}　›　{esc(d["city"] or "")}</div>
     <span class="badge {cls}">{esc(label)}</span>
-    <h1 style="margin-top:12px">{esc(d["name"])}</h1>
-    <p>{esc(area)}の店舗情報。{fmt_date(ev)}の{esc(label)}情報として掲載しています。</p>
+    <h1 style="margin-top:12px">{esc(headline)}</h1>
+    <p>{esc(d["name"])}の{esc(label)}情報。所在地・日付・掲載元を確認できます。</p>
   </div>
 </section>
 <div class="wrap layout">

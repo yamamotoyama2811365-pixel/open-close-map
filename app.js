@@ -20,6 +20,17 @@ function label(s){
   }[s]||s||'店舗情報';
 }
 
+function impactHeadline(x){
+  const name=x?.name||'店舗名未確認';
+  const area=[x?.prefecture,x?.city].filter(Boolean).join('');
+  const status=x?.status||'';
+  if(status==='closing') return `「${name}」が閉店へ${area?`　${area}`:''}`;
+  if(status==='closed') return `「${name}」が閉店${area?`　${area}`:''}`;
+  if(status==='opening') return `「${name}」が${area?area+'に':''}オープン予定`;
+  if(status==='open') return `「${name}」が${area?area+'に':''}オープン`;
+  return name;
+}
+
 function renderHeroLatest(items){
   const box=$('heroLatest');
   if(!box)return;
@@ -29,7 +40,7 @@ function renderHeroLatest(items){
     ?rows.map(x=>`
       <a class="hero-mini-row" href="/store/${encodeURIComponent(x.id)}" data-ga-event="store_select" data-ga-store-id="${esc(x.id)}" data-ga-placement="hero">
         <span class="hero-mini-status ${esc(x.status)}">${esc(label(x.status))}</span>
-        <span class="hero-mini-name">${esc(x.name||'店舗名未確認')}</span>
+        <span class="hero-mini-name">${esc(impactHeadline(x))}</span>
         <span class="hero-mini-date">${esc(x.open_date||x.close_date||'')}</span>
       </a>
     `).join('')
@@ -46,7 +57,7 @@ function render(items){
             <span class="badge ${esc(x.status)}">${esc(label(x.status))}</span>
             ${x.category?`<span class="store-tag">${esc(x.category)}</span>`:''}
           </div>
-          <div class="store-name">${esc(x.name||'店舗名未確認')}</div>
+          <div class="store-name">${esc(impactHeadline(x))}</div>
           <div class="store-meta">${esc([x.prefecture,x.city].filter(Boolean).join(' ')||'エリア未確認')}</div>
           <div class="store-tags">
             ${x.confidence?`<span class="store-tag">確度 ${esc(x.confidence)}%</span>`:''}
