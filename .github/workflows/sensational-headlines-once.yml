@@ -1,0 +1,79 @@
+name: Apply sensational factual headlines once
+
+on:
+  push:
+    paths:
+      - '.github/workflows/sensational-headlines-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch factual impact headlines
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p=Path(path)
+              text=p.read_text()
+              if old not in text:
+                  raise SystemExit(f'expected snippet not found: {path}: {old[:80]!r}')
+              p.write_text(text.replace(old,new,1))
+
+          app=Path('app.js')
+          text=app.read_text()
+          marker='function renderHeroLatest(items){\n'
+          helper='''function impactHeadline(x){\n  const name=x?.name||'店舗名未確認';\n  const area=[x?.prefecture,x?.city].filter(Boolean).join('');\n  const status=x?.status||'';\n  if(status==='closing') return `「${name}」が閉店へ${area?`　${area}`:''}`;\n  if(status==='closed') return `「${name}」が閉店${area?`　${area}`:''}`;\n  if(status==='opening') return `「${name}」が${area?area+'に':''}オープン予定`;\n  if(status==='open') return `「${name}」が${area?area+'に':''}オープン`;\n  return name;\n}\n\n'''
+          if 'function impactHeadline(x)' not in text:
+              if marker not in text: raise SystemExit('hero marker missing')
+              text=text.replace(marker,helper+marker,1)
+              app.write_text(text)
+
+          replace_once('app.js',
+              '<span class="hero-mini-name">${esc(x.name||\'店舗名未確認\')}</span>',
+              '<span class="hero-mini-name">${esc(impactHeadline(x))}</span>')
+          replace_once('app.js',
+              '<div class="store-name">${esc(x.name||\'店舗名未確認\')}</div>',
+              '<div class="store-name">${esc(impactHeadline(x))}</div>')
+
+          seo=Path('backend/collectors/seo_pages.py')
+          text=seo.read_text()
+          marker='def store_cards(rows):\n'
+          helper='''def impact_headline(d):\n    """Make the verified open/close fact read like a headline without adding claims."""\n    name=(d.get("name") or "店舗名未確認").strip()\n    area="".join(x for x in (d.get("prefecture"),d.get("city")) if x)\n    status=d.get("status") or ""\n    ev=event_date(d)\n    day=("　"+fmt_date(ev)) if ev else ""\n    if status=="closing":\n        return f"「{name}」が閉店へ" + (f"　{area}" if area else "") + day\n    if status=="closed":\n        return f"「{name}」が閉店" + (f"　{area}" if area else "") + day\n    if status=="opening":\n        return f"「{name}」が{area+'に' if area else ''}オープン予定" + day\n    if status=="open":\n        return f"「{name}」が{area+'に' if area else ''}オープン" + day\n    return name\n\n'''
+          if 'def impact_headline(d):' not in text:
+              if marker not in text: raise SystemExit('store cards marker missing')
+              text=text.replace(marker,helper+marker,1)
+              seo.write_text(text)
+
+          replace_once('backend/collectors/seo_pages.py',
+              "    <h3>{esc(d['name'])}</h3>",
+              "    <h3>{esc(impact_headline(d))}</h3>")
+          replace_once('backend/collectors/seo_pages.py',
+              "    title=f\"{d['name']}の開店・閉店情報｜{area or '店舗情報'}｜{SITE_NAME}\"\n    desc=f\"{area}の「{d['name']}」の{label}情報。所在地、日付、業種、掲載元などを確認できます。\"\n",
+              "    headline=impact_headline(d)\n    title=f\"{headline}｜{SITE_NAME}\"\n    desc=f\"{headline}。所在地、日付、業種、掲載元などを確認できます。\"\n")
+          replace_once('backend/collectors/seo_pages.py',
+              '    <h1 style="margin-top:12px">{esc(d["name"])}</h1>\n    <p>{esc(area)}の店舗情報。{fmt_date(ev)}の{esc(label)}情報として掲載しています。</p>',
+              '    <h1 style="margin-top:12px">{esc(headline)}</h1>\n    <p>{esc(d["name"])}の{esc(label)}情報。所在地・日付・掲載元を確認できます。</p>')
+          PY
+          node --check app.js
+          python -m py_compile backend/collectors/seo_pages.py
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.js backend/collectors/seo_pages.py
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Use factual high-impact headlines for open-close news"
+            git push
+          fi
