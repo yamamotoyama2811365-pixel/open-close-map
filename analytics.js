@@ -101,10 +101,3 @@
   window.__openCloseAnalyticsReady=initAnalytics();
   loadAffiliateAds();
 })();
-
-/* Four i-mobile inline slots and one overlay, with device-specific inventory. */
-(function(){
-  if(document.querySelector('script[data-sow-imobile]'))return;
-  var script=document.createElement('script');script.src='/imobile-ads.js?v=20260917-1';
-  script.defer=true;script.dataset.sowImobile='1';document.head.appendChild(script);
-})();
